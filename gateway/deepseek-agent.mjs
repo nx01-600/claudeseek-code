@@ -44,7 +44,11 @@ No repitas el contenido de los archivos ni pegues fragmentos largos.`;
 // que lo lea con su propia herramienta.
 const INLINE_TASK_MAX_CHARS = 3500;
 
-const DEFAULT_DISALLOWED = ['Bash(git push:*)', 'Bash(git push *)'];
+// WebSearch es tool de servidor de Anthropic (la ejecuta Anthropic dentro de
+// la misma llamada a la API): no existe forma de que DeepSeek la resuelva.
+// Si se deja disponible, el modelo la intenta igual y devuelve resultados
+// inventados o directamente falla. Se bloquea para que solo la use Claude real.
+const DEFAULT_DISALLOWED = ['Bash(git push:*)', 'Bash(git push *)', 'WebSearch'];
 
 function parseArgs(argv) {
   const opts = {};

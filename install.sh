@@ -20,7 +20,7 @@ SKILL_DST="$CLAUDE_HOME/skills/claudeseek"
 CODE_FILES=(
   deepseek-client.mjs translate.mjs server.mjs start.mjs cli.mjs scoped-env.mjs
   deepseek-agent.mjs deepseek-session.mjs deepseek-session.cmd deepseek-session
-  dsk.cmd dsk config.json prices.json
+  escalate-to-sonnet.mjs dsk.cmd dsk config.json prices.json
 )
 
 echo "Instalando gateway en $GATEWAY_DST ..."

@@ -31,6 +31,11 @@ async function main() {
   const modelFlag = args.indexOf('--model');
   const model = modelFlag !== -1 ? args[modelFlag + 1] : config.defaultModel;
 
+  // WebSearch la ejecuta Anthropic del lado del servidor; sobre DeepSeek no
+  // hay quien la resuelva y el modelo termina inventando resultados. Se
+  // bloquea acá salvo que quien invoque ya haya elegido su propia lista.
+  if (!args.includes('--disallowedTools')) args.push('--disallowedTools', 'WebSearch');
+
   // Ctrl+C lo tiene que manejar claude, no este lanzador.
   process.on('SIGINT', () => {});
   const child = spawn('claude', args, { stdio: 'inherit', env: buildScopedEnv(config, { model }) });

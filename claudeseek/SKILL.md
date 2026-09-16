@@ -1,6 +1,6 @@
 ---
 name: claudeseek
-description: Usar para delegar una tarea a un Claude Code completo (todas las herramientas, skills, MCP, subagentes y razonamiento opcional) que corre sobre DeepSeek en vez del modelo actual. Típico para tareas grandes de escritura o generación de contenido (secciones de un sitio, copy, FAQs, traducciones, boilerplate, datos de ejemplo) donde no hace falta el criterio del modelo caro. También cuando el usuario diga "delegá a deepseek", "usá deepseek", "mandalo a deepseek", "/deepseek" o pregunte cómo abrir una sesión sobre DeepSeek.
+description: Usar para delegar una tarea a un Claude Code completo (todas las herramientas, skills, MCP, subagentes y razonamiento opcional) que corre sobre DeepSeek en vez del modelo actual. Típico para tareas grandes de escritura o generación de contenido (secciones de un sitio, copy, FAQs, traducciones, boilerplate, datos de ejemplo) donde no hace falta el criterio del modelo caro. También cuando el usuario diga "delegá a deepseek", "usá deepseek", "mandalo a deepseek", "/deepseek" o pregunte cómo abrir una sesión sobre DeepSeek. Además aplica DENTRO de una sesión que ya corre sobre DeepSeek cuando necesita WebSearch o cualquier otra herramienta de servidor de Anthropic que no existe ahí: esta skill explica cómo escalar ese paso puntual a un Sonnet real.
 ---
 
 # Delegar a DeepSeek desde Claude Code
@@ -88,6 +88,25 @@ Es una sesión normal de Claude Code en esa terminal, con todo disponible.
 Dentro, `/model` permite alternar entre la variante con y sin razonamiento.
 No afecta ninguna otra sesión abierta.
 
+## Escalar a Sonnet real (para una sesión que YA corre sobre DeepSeek)
+
+Si estás corriendo sobre DeepSeek y la tarea necesita algo que acá no existe
+— WebSearch es el caso típico, ver Limitaciones — no lo inventes ni lo des
+por imposible: podés escalar ese paso puntual a un Claude Code real (Sonnet,
+tu login por suscripción) sin salir de esta sesión, vía Bash:
+
+```bash
+node "$HOME/.claude/deepseek-gateway/escalate-to-sonnet.mjs" \
+  --task "Buscá en la web: <query concreta> y devolveme los datos con fuentes" \
+  --dir "<carpeta actual>"
+```
+
+Para tareas más largas, `--task-file <ruta>` en vez de `--task`. Bloquea y
+devuelve la respuesta de texto de Sonnet; no queda una sesión visible
+después. Usalo solo para el paso puntual que lo necesita (una búsqueda, un
+dato que hay que verificar), no para delegarle la tarea entera — eso
+consume cuota/costo real de Anthropic, no la de DeepSeek.
+
 ## Diagnóstico y costo
 
 ```bash
@@ -112,7 +131,8 @@ DeepSeek **no es real** (usa tarifas de Anthropic). El real es el de `cost`.
 ## Limitaciones
 
 - Las herramientas "de servidor" de Anthropic (WebSearch) no existen en
-  DeepSeek. WebFetch sí funciona.
+  DeepSeek. WebFetch sí funciona. Para escalar un paso puntual a Sonnet
+  real, ver "Escalar a Sonnet real" más arriba.
 - Las imágenes las analiza `deepseek-flash`, incluso dentro de un
   `tool_result` (sirve para capturas de pantalla). `deepseek-pro` no las ve:
   ahí llega un aviso de texto.

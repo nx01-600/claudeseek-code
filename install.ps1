@@ -24,7 +24,7 @@ New-Item -ItemType Directory -Force -Path $GatewayDst | Out-Null
 $codeFiles = @(
   "deepseek-client.mjs", "translate.mjs", "server.mjs", "start.mjs", "cli.mjs", "scoped-env.mjs",
   "deepseek-agent.mjs", "deepseek-session.mjs", "deepseek-session.cmd", "deepseek-session",
-  "dsk.cmd", "dsk", "config.json", "prices.json"
+  "escalate-to-sonnet.mjs", "dsk.cmd", "dsk", "config.json", "prices.json"
 )
 foreach ($f in $codeFiles) {
     Copy-Item -Path (Join-Path $GatewaySrc $f) -Destination (Join-Path $GatewayDst $f) -Force
