@@ -331,9 +331,12 @@ lugares donde Claude Code las manda:
 
 - **en el mensaje del usuario** — capturas pegadas, fotos, diagramas;
 - **dentro de un `tool_result`** — así llegan las capturas de pantalla que
-  devuelve una herramienta. Esto es lo que hace viable el control de navegador
-  (por ejemplo la integración *Claude in Chrome*): el modelo efectivamente ve
-  la página, no un texto de aviso.
+  devuelve una herramienta.
+
+Ojo: esto hace posible que el modelo **vea** una captura, pero no te da control
+de navegador. Para eso hace falta una herramienta de navegador, y la integración
+*Claude in Chrome* **no funciona sobre DeepSeek** (ver
+[Limitaciones](#limitaciones)).
 
 En el protocolo se traduce un bloque `image` de Anthropic
 (`{type: "image", source: {type: "base64", media_type, data}}`) a una parte
@@ -369,6 +372,20 @@ texto puede salir vacía. Con los valores que usa Claude Code no pasa.
   servidores. WebFetch sí funciona.
 - **Connectors de claude.ai** (Gmail, Canva, etc.) no cargan en procesos sobre
   DeepSeek, porque dependen del login de claude.ai. Los MCP locales sí andan.
+- **Claude in Chrome no funciona**, y no hay forma de que funcione dentro de
+  este diseño. Es un MCP de primera parte que Claude Code levanta y engancha
+  por sesión, pero está detrás de un chequeo de suscripción de claude.ai
+  (`Claude in Chrome requires a claude.ai subscription.`). Y el gateway existe
+  justamente para que el proceso hijo **no** use el login de claude.ai: el
+  `ANTHROPIC_AUTH_TOKEN` tiene precedencia y lo desactiva. Las dos cosas son
+  mutuamente excluyentes por construcción.
+
+  Verificado el 2026-09-15: una sesión normal con `--chrome` recibe 22
+  herramientas `mcp__claude-in-chrome__*`; la misma sesión sobre DeepSeek
+  recibe cero. Las MCP de terceros sí funcionan, así que la vía para tener
+  navegador sobre DeepSeek es una MCP de navegador propia (por ejemplo
+  Playwright MCP), que además ahora sí puede devolver capturas útiles porque
+  la traducción de imágenes existe.
 - **Imágenes**: las analizan los modelos `deepseek-flash*`. Con `deepseek-pro*`
   llega un aviso de texto en su lugar.
 - Claude Code imprime un aviso `unrecognized_model` al arrancar: es inofensivo,
