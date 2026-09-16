@@ -1,0 +1,24 @@
+{
+  "_nota": "Precios USD por 1,000,000 de tokens. Editar a mano cuando DeepSeek cambie tarifas. El costo que muestra dsk siempre lleva ~ porque es estimado con esta tabla, no la factura real.",
+  "_fuente": "https://api-docs.deepseek.com/quick_start/pricing (verificar antes de confiar a ciegas, DeepSeek cambia precios seguido)",
+  "_actualizado": "2026-09-15",
+  "deepseek-flash": {
+    "inputPerM": 0.30,
+    "cachedInputPerM": 0.006,
+    "outputPerM": 1.20,
+    "offPeakMultiplier": 0.5
+  },
+  "deepseek-v4-pro": {
+    "inputPerM": 1.32,
+    "cachedInputPerM": 0.044,
+    "outputPerM": 3.96,
+    "offPeakMultiplier": 0.5,
+    "_nota": "DeepSeek está redirigiendo v4-pro a deepseek-flash con precio de flash desde 2026-09-14. Este bloque queda por si vuelve a existir como modelo separado."
+  },
+  "_default": {
+    "inputPerM": 0.30,
+    "cachedInputPerM": 0.006,
+    "outputPerM": 1.20,
+    "offPeakMultiplier": 0.5
+  }
+}

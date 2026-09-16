@@ -1,0 +1,17 @@
+# Los scripts de shell tienen que quedar en LF incluso en Windows: con CRLF el
+# shebang se rompe al clonar en macOS o Linux ("bad interpreter").
+* text=auto
+
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+
+# Shims de bash, sin extensión
+gateway/bin/deepseek      text eol=lf
+gateway/deepseek-session  text eol=lf
+gateway/dsk               text eol=lf
+
+# Estos son nativos de Windows
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

@@ -1,0 +1,8 @@
+.env
+*.local.*
+usage.jsonl
+agent-runs.jsonl
+gateway.log
+.bg-settings/
+node_modules/
+.claude/

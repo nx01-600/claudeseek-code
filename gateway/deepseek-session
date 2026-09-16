@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Sesión interactiva de Claude Code completa sobre DeepSeek.
+# Acotada a esta terminal: las demás sesiones de Claude no se enteran.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec node "$SCRIPT_DIR/deepseek-session.mjs" "$@"

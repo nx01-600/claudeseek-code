@@ -1,0 +1,19 @@
+{
+  "port": 4319,
+  "anthropicBaseUrl": "https://api.anthropic.com",
+  "deepseekBaseUrl": "https://api.deepseek.com",
+  "scopedToken": "deepseek-gateway-scoped",
+  "defaultModel": "deepseek-flash",
+  "contextWindowTokens": 1000000,
+  "models": {
+    "deepseek-flash": { "id": "deepseek-flash", "thinking": "auto", "vision": true },
+    "deepseek-flash-thinking": { "id": "deepseek-flash", "thinking": "on", "vision": true },
+    "deepseek-pro": { "id": "deepseek-v4-pro", "thinking": "auto", "vision": false },
+    "deepseek-pro-thinking": { "id": "deepseek-v4-pro", "thinking": "on", "vision": false }
+  },
+  "roleModels": {
+    "opus": "deepseek-flash-thinking",
+    "sonnet": "deepseek-flash",
+    "haiku": "deepseek-flash"
+  }
+}
