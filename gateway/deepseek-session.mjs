@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadJson, resolveApiKey } from './deepseek-client.mjs';
 import { ensureGatewayRunning } from './start.mjs';
-import { buildScopedEnv } from './scoped-env.mjs';
+import { buildScopedEnv, WEBSEARCH_NOTICE } from './scoped-env.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const config = loadJson(path.join(SCRIPT_DIR, 'config.json'), null);
@@ -35,6 +35,9 @@ async function main() {
   // hay quien la resuelva y el modelo termina inventando resultados. Se
   // bloquea acá salvo que quien invoque ya haya elegido su propia lista.
   if (!args.includes('--disallowedTools')) args.push('--disallowedTools', 'WebSearch');
+  if (!args.includes('--append-system-prompt') && !args.includes('--system-prompt')) {
+    args.push('--append-system-prompt', WEBSEARCH_NOTICE);
+  }
 
   // Ctrl+C lo tiene que manejar claude, no este lanzador.
   process.on('SIGINT', () => {});

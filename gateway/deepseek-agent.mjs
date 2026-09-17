@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadJson, resolveApiKey, resolveModel, getModels, stripBom } from './deepseek-client.mjs';
 import { ensureGatewayRunning } from './start.mjs';
-import { buildScopedEnv, scopedOverrides } from './scoped-env.mjs';
+import { buildScopedEnv, scopedOverrides, WEBSEARCH_NOTICE } from './scoped-env.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(SCRIPT_DIR, 'config.json');
@@ -143,6 +143,7 @@ async function runBackground({ config, model, opts, taskText, name, label, permi
   writeFileSync(settingsPath, JSON.stringify({ env: scopedOverrides(config, { model }) }, null, 2), 'utf8');
 
   const args = ['--bg', '--settings', settingsPath, '--model', model, '--name', name, '--permission-mode', permissionMode];
+  args.push('--append-system-prompt', WEBSEARCH_NOTICE);
   if (disallowed.length) args.push('--disallowedTools', ...disallowed);
   // "--" corta la lista variádica de --disallowedTools: sin esto, el texto
   // de la tarea se tragaba como si fuera un nombre de herramienta más y la
@@ -190,6 +191,7 @@ async function runBackground({ config, model, opts, taskText, name, label, permi
 // --- --foreground: bloquea y devuelve un resumen corto, sin quedar visible después ---
 async function runForeground({ config, model, opts, taskText, label, permissionMode, disallowed }) {
   const args = ['-p', '--model', model, '--permission-mode', permissionMode, '--output-format', 'json'];
+  args.push('--append-system-prompt', WEBSEARCH_NOTICE);
   if (disallowed.length) args.push('--disallowedTools', ...disallowed);
 
   const startedAt = Date.now();

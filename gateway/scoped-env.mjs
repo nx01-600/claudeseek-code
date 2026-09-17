@@ -5,6 +5,13 @@
 
 import { getModels } from './deepseek-client.mjs';
 
+// Bloquear WebSearch (server.mjs / los launchers) no alcanza: el modelo
+// tiene que saber que existe un camino para investigar igual, si no lo pide
+// por su cuenta o inventa datos. Se lo decimos directo en el system prompt
+// en vez de confiar en que descubra la skill claudeseek solo (DeepSeek
+// sigue esas convenciones peor que Claude).
+export const WEBSEARCH_NOTICE = 'WebSearch esta deshabilitada en esta sesion: corre sobre DeepSeek, que no puede ejecutarla (es una herramienta de servidor de Anthropic). Si necesitas buscar algo en internet o verificar un dato actual, ejecuta con Bash: node "$HOME/.claude/deepseek-gateway/escalate-to-sonnet.mjs" --task "<que buscar>" -- lanza un Claude real (Sonnet) con WebSearch y devuelve la respuesta con fuentes. Usalo cada vez que haga falta informacion de internet; no inventes resultados ni digas que no podes buscar.';
+
 // Variables que Claude Code le pone a los procesos que lanza. Si el hijo las
 // hereda, puede creer que está anidado dentro de la sesión padre.
 const PARENT_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT'];
