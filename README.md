@@ -1,159 +1,159 @@
 # claudeseek
 
-**Correr Claude Code completo sobre DeepSeek**, contra la API directa, sin
-OpenRouter ni intermediarios. Herramientas, skills, hooks, MCP, CLAUDE.md,
-subagentes e imágenes. Lo único que cambia es el modelo que responde.
+**Run full Claude Code on DeepSeek**, against the direct API, no OpenRouter
+and no middlemen. Tools, skills, hooks, MCP, CLAUDE.md, subagents, and
+images. The only thing that changes is the model answering.
 
-Claude Code sigue siendo Claude Code: se le dice que hable con un gateway local
-que traduce el protocolo de Anthropic al de DeepSeek, y nada más.
+Claude Code stays Claude Code: it's just told to talk to a local gateway that
+translates Anthropic's protocol to DeepSeek's, and nothing else.
 
-> No está afiliado a Anthropic ni a DeepSeek. Es un puente entre dos APIs
-> públicas.
-
----
-
-## Índice
-
-- [Qué es](#qué-es) — especificación técnica
-- [Para qué sirve](#para-qué-sirve)
-- [Cómo funciona](#cómo-funciona)
-- [Replicarlo en tu Claude Code](#replicarlo-en-tu-claude-code)
-- [Uso](#uso)
-- [Modelos](#modelos)
-- [Imágenes](#imágenes)
-- [Seguridad](#seguridad)
-- [Limitaciones](#limitaciones)
-- [Agregar un modelo](#agregar-un-modelo)
-- [Solución de problemas](#solución-de-problemas)
-- [Estructura del repo](#estructura-del-repo)
-- [Estado](#estado)
-- [Desinstalar](#desinstalar)
-- [Licencia](#licencia)
+> Not affiliated with Anthropic or DeepSeek. It's a bridge between two public
+> APIs.
 
 ---
 
-## Qué es
+## Index
 
-Un **gateway HTTP local** que implementa la API de Mensajes de Anthropic y la
-traduce a la API OpenAI-compatible de DeepSeek, en las dos direcciones. Se
-interpone entre un proceso de Claude Code y `api.deepseek.com`.
+- [What it is](#what-it-is) — technical spec
+- [What it's for](#what-its-for)
+- [How it works](#how-it-works)
+- [Replicating it in your Claude Code](#replicating-it-in-your-claude-code)
+- [Usage](#usage)
+- [Models](#models)
+- [Images](#images)
+- [Security](#security)
+- [Limitations](#limitations)
+- [Adding a model](#adding-a-model)
+- [Troubleshooting](#troubleshooting)
+- [Repo structure](#repo-structure)
+- [Status](#status)
+- [Uninstalling](#uninstalling)
+- [License](#license)
 
-### Especificación
+---
+
+## What it is
+
+A **local HTTP gateway** that implements Anthropic's Messages API and
+translates it to DeepSeek's OpenAI-compatible API, in both directions. It
+sits between a Claude Code process and `api.deepseek.com`.
+
+### Spec
 
 | | |
 |---|---|
-| **Escucha en** | `127.0.0.1:4319` (configurable en `config.json`), solo loopback |
-| **Habla** | Anthropic Messages API ↔ DeepSeek (`/chat/completions`) |
+| **Listens on** | `127.0.0.1:4319` (configurable in `config.json`), loopback only |
+| **Speaks** | Anthropic Messages API ↔ DeepSeek (`/chat/completions`) |
 | **Upstream** | `https://api.deepseek.com` (configurable) |
-| **Runtime** | Node.js 18+, sin dependencias externas (usa `fetch` nativo) |
-| **Rutas que implementa** | `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models`, `GET /v1/models/:id`, `GET /health` |
-| **Cualquier otra ruta** | passthrough intacto a `api.anthropic.com` |
-| **Configuración** | `gateway/config.json` (se lee una vez al arrancar) |
-| **Secretos** | `~/.claude/deepseek-gateway/.env` (nunca se commitea) |
+| **Runtime** | Node.js 18+, no external dependencies (uses native `fetch`) |
+| **Routes implemented** | `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models`, `GET /v1/models/:id`, `GET /health` |
+| **Any other route** | untouched passthrough to `api.anthropic.com` |
+| **Configuration** | `gateway/config.json` (read once at startup) |
+| **Secrets** | `~/.claude/deepseek-gateway/.env` (never committed) |
 
-### Qué traduce
+### What it translates
 
-| Capacidad | Estado |
+| Capability | Status |
 |---|---|
-| Texto, streaming SSE y no-streaming | Sí |
-| Herramientas (`tool_use` / `tool_result`) | Sí |
-| **Imágenes** (mensaje del usuario y `tool_result`) | Sí, con modelos que las soporten |
-| Razonamiento de DeepSeek → bloques `thinking` de Anthropic | Sí |
-| `stop_reason`, `usage` (incluido cache hit) | Sí |
-| System prompt | Sí |
-| Herramientas de servidor de Anthropic (`web_search`, `code_execution`) | **No** — las ejecuta Anthropic, no el cliente |
-| `cache_control` | **No** — DeepSeek cachea solo del lado del servidor |
+| Text, SSE streaming and non-streaming | Yes |
+| Tools (`tool_use` / `tool_result`) | Yes |
+| **Images** (user message and `tool_result`) | Yes, with models that support them |
+| DeepSeek reasoning → Anthropic `thinking` blocks | Yes |
+| `stop_reason`, `usage` (including cache hit) | Yes |
+| System prompt | Yes |
+| Anthropic server-side tools (`web_search`, `code_execution`) | **No** — Anthropic executes them, not the client |
+| `cache_control` | **No** — DeepSeek only caches server-side |
 
-### Modos de ruteo
+### Routing modes
 
-El gateway decide por petición, con una de tres reglas:
+The gateway decides per request, with one of three rules:
 
-1. **scoped** — la petición trae el token local (`config.scopedToken`), o sea
-   viene de un proceso de Claude Code lanzado para correr sobre DeepSeek. Va
-   **todo** a DeepSeek, incluidas las llamadas internas que Claude Code hace
-   con nombres de modelo de Anthropic (opus/sonnet/haiku).
-2. **modelo DeepSeek** — el nombre del modelo es de DeepSeek. Se traduce.
-3. **cualquier otra cosa** — passthrough intacto a `api.anthropic.com`.
-
----
-
-## Para qué sirve
-
-Dos formas de uso, y las dos conviven con tu Claude Code normal:
-
-1. **Delegar una tarea** desde cualquier sesión de Claude Code a otro proceso
-   de Claude Code que corre sobre DeepSeek. Por defecto queda como **sesión
-   visible en segundo plano** (agent view, `claude agents`,
-   `claude attach/logs/stop`), así que se puede mirar y entrar como cualquier
-   otra sesión en background. Con `--foreground` en cambio bloquea, devuelve un
-   resumen corto y no deja sesión visible.
-2. **Abrir una sesión interactiva** de Claude Code sobre DeepSeek, en primer
-   plano, en su propia terminal.
-
-La razón de delegar: tareas de mucho texto de salida (secciones de un sitio,
-copy, FAQs, traducciones, boilerplate, datos de ejemplo) donde no hace falta el
-criterio del modelo caro. DeepSeek sale bastante más barato.
-
-**Tu sesión normal de Claude Code, su login por suscripción y tu
-`settings.json` no se tocan nunca.**
+1. **scoped** — the request carries the local token (`config.scopedToken`),
+   meaning it comes from a Claude Code process launched to run on DeepSeek.
+   **Everything** goes to DeepSeek, including the internal calls Claude Code
+   makes using Anthropic model names (opus/sonnet/haiku).
+2. **DeepSeek model** — the model name is a DeepSeek one. It gets translated.
+3. **anything else** — untouched passthrough to `api.anthropic.com`.
 
 ---
 
-## Cómo funciona
+## What it's for
+
+Two ways to use it, and both coexist with your normal Claude Code:
+
+1. **Delegate a task** from any Claude Code session to another Claude Code
+   process running on DeepSeek. By default it stays as a **visible
+   background session** (agent view, `claude agents`,
+   `claude attach/logs/stop`), so it can be watched and entered like any
+   other background session. With `--foreground` it instead blocks, returns
+   a short summary, and leaves no visible session.
+2. **Open an interactive session** of Claude Code on DeepSeek, in the
+   foreground, in its own terminal.
+
+The reason to delegate: tasks with a lot of output text (sections of a site,
+copy, FAQs, translations, boilerplate, sample data) where the expensive
+model's judgment isn't needed. DeepSeek comes out quite a bit cheaper.
+
+**Your normal Claude Code session, its subscription login, and your
+`settings.json` are never touched.**
+
+---
+
+## How it works
 
 ```
-Sesión normal de Claude Code (login de suscripción, intacta)
+Normal Claude Code session (subscription login, intact)
   |
   | node deepseek-agent.mjs --task-file ... --dir ...
   v
-claude --bg   (sesión hija, Claude Code completo, visible en agent view)
-  entorno acotado vía --settings: ANTHROPIC_BASE_URL=http://127.0.0.1:4319
-                                  ANTHROPIC_AUTH_TOKEN=<token local>
-                                  opus/sonnet/haiku -> modelos de DeepSeek
+claude --bg   (child session, full Claude Code, visible in agent view)
+  scoped environment via --settings: ANTHROPIC_BASE_URL=http://127.0.0.1:4319
+                                  ANTHROPIC_AUTH_TOKEN=<local token>
+                                  opus/sonnet/haiku -> DeepSeek models
   v
-gateway local (127.0.0.1, nunca expuesto a la red)
-  |-- token "scoped"        -> TODO a DeepSeek (también llamadas internas)
-  |-- modelo deepseek-*     -> DeepSeek
-  |-- cualquier otra cosa   -> passthrough intacto a api.anthropic.com
+local gateway (127.0.0.1, never exposed to the network)
+  |-- "scoped" token          -> EVERYTHING to DeepSeek (including internal calls)
+  |-- deepseek-* model        -> DeepSeek
+  |-- anything else           -> untouched passthrough to api.anthropic.com
   v
-api.deepseek.com   (la key de DeepSeek la pone el gateway)
+api.deepseek.com   (the gateway supplies the DeepSeek key)
 ```
 
-### Por qué un proceso hijo y no una variable global
+### Why a child process and not a global variable
 
-Claude Code acepta apuntar a un gateway propio con `ANTHROPIC_BASE_URL`, pero
-en el proceso donde esa variable está puesta el login de claude.ai deja de
-usarse y pasa a exigir una credencial explícita
-([doc oficial](https://code.claude.com/docs/en/llm-gateway-connect)). Si esa
-variable estuviera en `settings.json`, tu uso normal de Opus/Sonnet dejaría de
-salir del plan pagado.
+Claude Code accepts pointing to your own gateway with `ANTHROPIC_BASE_URL`,
+but in the process where that variable is set, claude.ai login stops being
+used and it starts requiring an explicit credential
+([official doc](https://code.claude.com/docs/en/llm-gateway-connect)). If
+that variable were in `settings.json`, your normal Opus/Sonnet usage would
+stop coming out of the paid plan.
 
-Por eso las variables se ponen **solo en el entorno de un proceso hijo**
-(`gateway/scoped-env.mjs`). La sesión normal nunca las ve, y por eso podés
-tener las dos cosas al mismo tiempo sin conflicto.
+That's why the variables are set **only in a child process's environment**
+(`gateway/scoped-env.mjs`). The normal session never sees them, which is why
+you can have both things at the same time without conflict.
 
-### El token "scoped"
+### The "scoped" token
 
-`config.json` tiene un `scopedToken` con un valor fijo y público
-(`deepseek-gateway-scoped`). **No es un secreto**: es una marca local que le
-dice al gateway "esta petición viene de un proceso que debe ir a DeepSeek".
-Sirve para que el gateway sepa enrutar incluso las llamadas internas de Claude
-Code, que usan nombres de modelo de Anthropic.
+`config.json` has a `scopedToken` with a fixed, public value
+(`deepseek-gateway-scoped`). **It's not a secret**: it's a local marker that
+tells the gateway "this request comes from a process that should go to
+DeepSeek." It lets the gateway route even Claude Code's internal calls, which
+use Anthropic model names.
 
-La key de DeepSeek es otra cosa y nunca sale del gateway.
+The DeepSeek key is a different thing entirely and never leaves the gateway.
 
 ---
 
-## Replicarlo en tu Claude Code
+## Replicating it in your Claude Code
 
-### Requisitos
+### Requirements
 
-- **Node.js 18 o superior** (usa `fetch` nativo).
-- **Claude Code** instalado y en el PATH.
-- Una **API key de DeepSeek** ([platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys)).
-- Windows, macOS o Linux.
+- **Node.js 18 or newer** (uses native `fetch`).
+- **Claude Code** installed and in the PATH.
+- A **DeepSeek API key** ([platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys)).
+- Windows, macOS, or Linux.
 
-### Camino rápido
+### Quick path
 
 ```bash
 git clone https://github.com/nx01-600/claudeseek-code.git
@@ -172,33 +172,34 @@ cd claudeseek-code
 ./install.sh
 ```
 
-Cualquiera de los dos copia el gateway a `~/.claude/deepseek-gateway/` y la
-skill a `~/.claude/skills/claudeseek/`. Es seguro correrlo varias veces: nunca
-pisa `.env` ni los logs.
+Either one copies the gateway to `~/.claude/deepseek-gateway/` and the skill
+to `~/.claude/skills/claudeseek/`. Safe to run multiple times: it never
+overwrites `.env` or the logs.
 
-Después, pegá la API key en `~/.claude/deepseek-gateway/.env`:
+Then, paste your API key into `~/.claude/deepseek-gateway/.env`:
 
 ```
-DEEPSEEK_API_KEY=sk-tu-key-aca
+DEEPSEEK_API_KEY=sk-your-key-here
 ```
 
-Y verificá:
+And verify:
 
 ```bash
 node "$HOME/.claude/deepseek-gateway/cli.mjs" doctor
 ```
 
-El `doctor` chequea la key, si el gateway responde, la conectividad con
-DeepSeek y qué modelos hay vivos, incluyendo si cada uno analiza imágenes.
+`doctor` checks the key, whether the gateway responds, connectivity with
+DeepSeek, and which models are live, including whether each one analyzes
+images.
 
-No hace falta reiniciar Claude Code. El gateway arranca solo la primera vez que
-algo lo usa.
+No need to restart Claude Code. The gateway starts on its own the first time
+something uses it.
 
-### Replicarlo a mano (entender cada pieza)
+### Replicating it by hand (understanding each piece)
 
-Si querés hacerlo paso a paso sin el instalador:
+If you want to do it step by step without the installer:
 
-**1. Copiar el gateway**
+**1. Copy the gateway**
 
 ```bash
 mkdir -p ~/.claude/deepseek-gateway
@@ -207,53 +208,53 @@ cp gateway/*.mjs gateway/*.json gateway/dsk gateway/dsk.cmd \
    ~/.claude/deepseek-gateway/
 ```
 
-**2. Poner la API key**
+**2. Set the API key**
 
 ```bash
-echo 'DEEPSEEK_API_KEY=sk-tu-key-aca' > ~/.claude/deepseek-gateway/.env
+echo 'DEEPSEEK_API_KEY=sk-your-key-here' > ~/.claude/deepseek-gateway/.env
 ```
 
-**3. Copiar la skill**
+**3. Copy the skill**
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -r claudeseek ~/.claude/skills/claudeseek
 ```
 
-La skill es la que le enseña a Claude Code *cuándo* delegar. Sin ella igual
-funciona todo, pero Claude Code no va a proponer delegar solo.
+The skill is what teaches Claude Code *when* to delegate. Without it
+everything still works, but Claude Code won't propose delegating on its own.
 
-**4. Arrancar el gateway y comprobar que responde**
+**4. Start the gateway and check that it responds**
 
 ```bash
 node ~/.claude/deepseek-gateway/cli.mjs gateway start
 node ~/.claude/deepseek-gateway/cli.mjs doctor
 ```
 
-**5. Probar una sesión sobre DeepSeek**
+**5. Test a session on DeepSeek**
 
 ```bash
 node ~/.claude/deepseek-gateway/deepseek-session.mjs --model deepseek-flash
 ```
 
-Si eso abre una sesión de Claude Code y te responde, ya está: el resto
-(delegación en segundo plano, comando corto `deepseek`) es azúcar sobre lo
-mismo.
+If that opens a Claude Code session and it responds, you're done: the rest
+(background delegation, the short `deepseek` command) is sugar on top of the
+same thing.
 
-### Cómo comprobar que de verdad va a DeepSeek
+### How to check it's really going to DeepSeek
 
 ```bash
 node ~/.claude/deepseek-gateway/cli.mjs gateway logs
 ```
 
-Cada línea dice a dónde fue la petición:
+Each line says where the request went:
 
 ```
 POST /v1/messages model=deepseek-flash -> deepseek(scoped)
 POST /v1/messages model=claude-sonnet-5 -> passthrough
 ```
 
-Y el costo real, que Claude Code no puede calcular:
+And the real cost, which Claude Code can't calculate:
 
 ```bash
 node ~/.claude/deepseek-gateway/cli.mjs cost --since 1d
@@ -261,224 +262,227 @@ node ~/.claude/deepseek-gateway/cli.mjs cost --since 1d
 
 ---
 
-## Uso
+## Usage
 
-### Delegar desde Claude Code
+### Delegating from Claude Code
 
-Normalmente lo hace Claude Code solo, siguiendo la skill `claudeseek`. A mano:
+Normally Claude Code does this on its own, following the `claudeseek` skill.
+By hand:
 
 ```bash
 node "$HOME/.claude/deepseek-gateway/deepseek-agent.mjs" \
   --task-file brief.md \
-  --dir "/ruta/al/proyecto" \
+  --dir "/path/to/project" \
   [--model deepseek-flash-thinking] \
-  [--label nombre-corto] \
+  [--label short-name] \
   [--foreground]
 ```
 
-Queda como sesión visible en segundo plano: el recibo trae el id y los comandos
-para seguirla (`claude attach` / `logs` / `stop`). Varias tareas en paralelo son
-una invocación por tarea, trabajando sobre archivos distintos.
+It stays as a visible background session: the receipt carries the id and the
+commands to follow it (`claude attach` / `logs` / `stop`). Several parallel
+tasks are one invocation per task, working on different files.
 
-Corre con `--permission-mode bypassPermissions` y lo único bloqueado por defecto
-es `git push`, en ambos modos.
+Runs with `--permission-mode bypassPermissions` and the only thing blocked by
+default is `git push`, in both modes.
 
-### Sesión interactiva
+### Interactive session
 
 ```
 deepseek [--model deepseek-flash-thinking] [-c|-r] [--dangerously-skip-permissions]
 ```
 
-El comando corto `deepseek` se instala en `~/.local/bin` (si esa carpeta
-existe) y equivale a `~/.claude/deepseek-gateway/deepseek-session`. Dentro de la
-sesión, `/model` alterna entre la variante con y sin razonamiento.
+The short `deepseek` command is installed in `~/.local/bin` (if that folder
+exists) and is equivalent to `~/.claude/deepseek-gateway/deepseek-session`.
+Inside the session, `/model` toggles between the with- and without-reasoning
+variant.
 
-### Diagnóstico y costo
+### Diagnostics and cost
 
 ```bash
-node "$HOME/.claude/deepseek-gateway/cli.mjs" doctor           # key, gateway, conectividad, modelos
-node "$HOME/.claude/deepseek-gateway/cli.mjs" cost --since 7d  # costo real en DeepSeek
-node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway restart  # tras cambiar config.json o el código
-node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway logs     # últimas peticiones y a dónde se enrutaron
+node "$HOME/.claude/deepseek-gateway/cli.mjs" doctor           # key, gateway, connectivity, models
+node "$HOME/.claude/deepseek-gateway/cli.mjs" cost --since 7d  # real DeepSeek cost
+node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway restart  # after changing config.json or the code
+node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway logs     # latest requests and where they were routed
 ```
 
-El costo en dólares que muestra Claude Code dentro de una sesión DeepSeek **no
-es real** (usa tarifas de Anthropic). El real es el de `cost`, que se calcula
-con `prices.json` sobre el consumo registrado en `usage.jsonl`.
+The dollar cost Claude Code shows inside a DeepSeek session **isn't real**
+(it uses Anthropic rates). The real one is `cost`'s, which is calculated
+with `prices.json` against the usage recorded in `usage.jsonl`.
 
 ---
 
-## Modelos
+## Models
 
-Se definen en `gateway/config.json`:
+Defined in `gateway/config.json`:
 
-| Nombre en Claude Code | Modelo DeepSeek | Razonamiento | Imágenes |
+| Name in Claude Code | DeepSeek model | Reasoning | Images |
 |---|---|---|---|
-| `deepseek-flash` (default) | `deepseek-flash` | Solo si Claude Code lo pide | **Sí** |
-| `deepseek-flash-thinking` | `deepseek-flash` | Siempre | **Sí** |
-| `deepseek-pro` / `deepseek-pro-thinking` | `deepseek-v4-pro` | Igual que arriba | No |
+| `deepseek-flash` (default) | `deepseek-flash` | Only if Claude Code asks for it | **Yes** |
+| `deepseek-flash-thinking` | `deepseek-flash` | Always | **Yes** |
+| `deepseek-pro` / `deepseek-pro-thinking` | `deepseek-v4-pro` | Same as above | No |
 
-El razonamiento de DeepSeek se expone como bloque *thinking* nativo de Claude
-Code. `roleModels` define a qué modelo van los subagentes y las llamadas
-internas que Claude Code hace con nombres opus/sonnet/haiku.
-
----
-
-## Imágenes
-
-El gateway traduce las imágenes al formato que DeepSeek acepta, en los dos
-lugares donde Claude Code las manda:
-
-- **en el mensaje del usuario** — capturas pegadas, fotos, diagramas;
-- **dentro de un `tool_result`** — así llegan las capturas de pantalla que
-  devuelve una herramienta.
-
-Ojo: esto hace posible que el modelo **vea** una captura, pero no te da control
-de navegador. Para eso hace falta una herramienta de navegador, y la integración
-*Claude in Chrome* **no funciona sobre DeepSeek** (ver
-[Limitaciones](#limitaciones)).
-
-En el protocolo se traduce un bloque `image` de Anthropic
-(`{type: "image", source: {type: "base64", media_type, data}}`) a una parte
-`image_url` de OpenAI (`{type: "image_url", image_url: {url: "data:...;base64,..."}}`).
-DeepSeek acepta esa forma tanto en un mensaje del usuario como en uno `role:
-"tool"`, que es lo que permite el segundo caso.
-
-`deepseek-v4-pro` no analiza imágenes. Con ese modelo el gateway reemplaza cada
-una por un aviso de texto, en vez de mandarle a DeepSeek algo que va a
-rechazar. Si la tarea depende de ver imágenes, hay que usar `deepseek-flash`
-(las variantes con y sin razonamiento sirven igual).
-
-Un detalle medido: una imagen hace razonar más al modelo, así que con
-`max_tokens` chico el presupuesto se agota en el razonamiento y la respuesta de
-texto puede salir vacía. Con los valores que usa Claude Code no pasa.
+DeepSeek's reasoning is exposed as Claude Code's native *thinking* block.
+`roleModels` defines which model subagents and Claude Code's internal calls
+using opus/sonnet/haiku names go to.
 
 ---
 
-## Seguridad
+## Images
 
-- El gateway escucha **solo en `127.0.0.1`**, nunca se expone a la red.
-- La key de DeepSeek vive en `~/.claude/deepseek-gateway/.env` y **solo la usa
-  el gateway**. Nunca viaja a Anthropic ni a los procesos hijos de Claude Code.
-- Al revés, las credenciales de Anthropic nunca viajan a DeepSeek.
-- `.env`, `usage.jsonl`, `agent-runs.jsonl`, `gateway.log` y `.bg-settings/`
-  están en `.gitignore`: no se commitean.
+The gateway translates images to the format DeepSeek accepts, in the two
+places Claude Code sends them:
 
----
+- **in the user's message** — pasted screenshots, photos, diagrams;
+- **inside a `tool_result`** — this is how screenshots a tool returns get through.
 
-## Limitaciones
+Careful: this makes it possible for the model to **see** a screenshot, but it
+doesn't give you browser control. That needs a browser tool, and the
+*Claude in Chrome* integration **doesn't work on DeepSeek** (see
+[Limitations](#limitations)).
 
-- **WebSearch** no funciona: es una herramienta que ejecuta Anthropic en sus
-  servidores. WebFetch sí funciona.
-- **Connectors de claude.ai** (Gmail, Canva, etc.) no cargan en procesos sobre
-  DeepSeek, porque dependen del login de claude.ai. Los MCP locales sí andan.
-- **Claude in Chrome no funciona**, y no hay forma de que funcione dentro de
-  este diseño. Es un MCP de primera parte que Claude Code levanta y engancha
-  por sesión, pero está detrás de un chequeo de suscripción de claude.ai
-  (`Claude in Chrome requires a claude.ai subscription.`). Y el gateway existe
-  justamente para que el proceso hijo **no** use el login de claude.ai: el
-  `ANTHROPIC_AUTH_TOKEN` tiene precedencia y lo desactiva. Las dos cosas son
-  mutuamente excluyentes por construcción.
+At the protocol level, an Anthropic `image` block
+(`{type: "image", source: {type: "base64", media_type, data}}`) is
+translated to an OpenAI `image_url` part
+(`{type: "image_url", image_url: {url: "data:...;base64,..."}}`). DeepSeek
+accepts that shape both in a user message and in a `role: "tool"` one, which
+is what makes the second case possible.
 
-  Verificado el 2026-09-15: una sesión normal con `--chrome` recibe 22
-  herramientas `mcp__claude-in-chrome__*`; la misma sesión sobre DeepSeek
-  recibe cero. Las MCP de terceros sí funcionan, así que la vía para tener
-  navegador sobre DeepSeek es una MCP de navegador propia (por ejemplo
-  Playwright MCP), que además ahora sí puede devolver capturas útiles porque
-  la traducción de imágenes existe.
-- **Imágenes**: las analizan los modelos `deepseek-flash*`. Con `deepseek-pro*`
-  llega un aviso de texto en su lugar.
-- Claude Code imprime un aviso `unrecognized_model` al arrancar: es inofensivo,
-  solo indica que no conoce el nombre del modelo.
-- `/v1/messages/count_tokens` devuelve una estimación (caracteres / 4), no un
-  conteo real.
-- El bloqueo de `git push` depende de las reglas `--disallowedTools` de Claude
-  Code.
-- Solo se probó a fondo en Windows. El código es Node puro y los instaladores
-  cubren macOS y Linux, pero esos dos caminos todavía no se verificaron.
+`deepseek-v4-pro` doesn't analyze images. With that model the gateway
+replaces each one with a text notice, instead of sending DeepSeek something
+it will reject. If the task depends on seeing images, you need to use
+`deepseek-flash` (the with- and without-reasoning variants both work).
+
+One measured detail: an image makes the model reason more, so with a small
+`max_tokens` the budget runs out on reasoning and the text response can come
+back empty. With the values Claude Code uses, this doesn't happen.
 
 ---
 
-## Agregar un modelo
+## Security
 
-En `gateway/config.json`:
+- The gateway listens **only on `127.0.0.1`**, never exposed to the network.
+- The DeepSeek key lives in `~/.claude/deepseek-gateway/.env` and **only the
+  gateway uses it**. It never travels to Anthropic or to Claude Code's child
+  processes.
+- Conversely, Anthropic credentials never travel to DeepSeek.
+- `.env`, `usage.jsonl`, `agent-runs.jsonl`, `gateway.log`, and
+  `.bg-settings/` are in `.gitignore`: they never get committed.
+
+---
+
+## Limitations
+
+- **WebSearch** doesn't work: it's a tool Anthropic runs on its own servers.
+  WebFetch does work.
+- **claude.ai connectors** (Gmail, Canva, etc.) don't load in processes
+  running on DeepSeek, because they depend on claude.ai login. Local MCPs do
+  work.
+- **Claude in Chrome doesn't work**, and there's no way to make it work
+  within this design. It's a first-party MCP that Claude Code spins up and
+  wires per session, but it's gated behind a claude.ai subscription check
+  (`Claude in Chrome requires a claude.ai subscription.`). And the gateway
+  exists precisely so the child process does **not** use claude.ai login:
+  `ANTHROPIC_AUTH_TOKEN` takes precedence and disables it. The two things
+  are mutually exclusive by construction.
+
+  Verified on 2026-09-15: a normal session with `--chrome` gets 22
+  `mcp__claude-in-chrome__*` tools; the same session on DeepSeek gets zero.
+  Third-party MCPs do work, so the way to get a browser on DeepSeek is your
+  own browser MCP (e.g. Playwright MCP), which can now also return useful
+  screenshots since image translation exists.
+- **Images**: analyzed by the `deepseek-flash*` models. With `deepseek-pro*`
+  a text notice arrives instead.
+- Claude Code prints an `unrecognized_model` warning on startup: it's
+  harmless, it just means it doesn't recognize the model name.
+- `/v1/messages/count_tokens` returns an estimate (characters / 4), not a
+  real count.
+- Blocking `git push` depends on Claude Code's `--disallowedTools` rules.
+- Only thoroughly tested on Windows. The code is plain Node and the
+  installers cover macOS and Linux, but those two paths haven't been
+  verified yet.
+
+---
+
+## Adding a model
+
+In `gateway/config.json`:
 
 ```json
-"mi-modelo": { "id": "nombre-real-en-deepseek", "thinking": "auto", "vision": true }
+"my-model": { "id": "real-name-on-deepseek", "thinking": "auto", "vision": true }
 ```
 
-- `thinking`: `"on"` (siempre razona), `"off"` (nunca) o `"auto"` (solo si
-  Claude Code lo pide).
-- `vision`: `true` si el modelo analiza imágenes. Si lo dejás afuera se asume
-  `true`, para que una imagen no se descarte en silencio; el costo es que un
-  modelo sin visión devuelve un error visible de DeepSeek.
+- `thinking`: `"on"` (always reasons), `"off"` (never) or `"auto"` (only if
+  Claude Code asks for it).
+- `vision`: `true` if the model analyzes images. If you leave it out, `true`
+  is assumed, so an image isn't silently dropped; the cost is that a
+  non-vision model returns a visible error from DeepSeek.
 
-Después de tocar `config.json` hay que reiniciar el gateway
-(`cli.mjs gateway restart`), porque se lee una sola vez al arrancar.
+After touching `config.json` you have to restart the gateway
+(`cli.mjs gateway restart`), because it's read only once at startup.
 
 ---
 
-## Solución de problemas
+## Troubleshooting
 
-| Síntoma | Qué hacer |
+| Symptom | What to do |
 |---|---|
-| `Sin API key de DeepSeek` | Pegar la key en `~/.claude/deepseek-gateway/.env` |
-| `El gateway DeepSeek no arrancó` | Correr `doctor` y `gateway logs` |
-| `unrecognized_model` al arrancar | Inofensivo, se puede ignorar |
-| Las imágenes no llegan | Estás en `deepseek-pro*`; cambiá a `deepseek-flash` |
-| Respuestas de texto vacías | `max_tokens` chico y el razonamiento se comió el presupuesto |
-| Cambié `config.json` y no pasa nada | Falta `cli.mjs gateway restart` |
-| El costo que muestra Claude Code no cierra | Es el de Anthropic; el real es `cli.mjs cost` |
+| `No DeepSeek API key` | Paste the key into `~/.claude/deepseek-gateway/.env` |
+| `The DeepSeek gateway didn't start` | Run `doctor` and `gateway logs` |
+| `unrecognized_model` at startup | Harmless, can be ignored |
+| Images don't get through | You're on `deepseek-pro*`; switch to `deepseek-flash` |
+| Empty text responses | Small `max_tokens` and reasoning ate up the budget |
+| Changed `config.json` and nothing happens | Missing `cli.mjs gateway restart` |
+| The cost Claude Code shows doesn't add up | That's Anthropic's; the real one is `cli.mjs cost` |
 
 ---
 
-## Estructura del repo
+## Repo structure
 
 ```
 gateway/
-  server.mjs             Gateway: ruteo scoped/passthrough, streaming, errores
-  translate.mjs          Anthropic Messages API <-> formato OpenAI de DeepSeek
-  deepseek-client.mjs    Cliente DeepSeek, key, catálogo de modelos, precios
-  scoped-env.mjs         Entorno acotado para procesos de Claude Code
-  start.mjs              Arranque idempotente del gateway
+  server.mjs             Gateway: scoped/passthrough routing, streaming, errors
+  translate.mjs          Anthropic Messages API <-> DeepSeek's OpenAI format
+  deepseek-client.mjs    DeepSeek client, key, model catalog, prices
+  scoped-env.mjs         Scoped environment for Claude Code processes
+  start.mjs              Idempotent gateway startup
   cli.mjs (dsk)          doctor / models / cost / key / gateway start|stop|restart|logs
-  deepseek-agent.mjs     Delegación headless
-  deepseek-session.mjs   Sesión interactiva (+ .cmd y shim bash)
-  bin/                   Shims del comando corto `deepseek`
+  deepseek-agent.mjs     Headless delegation
+  deepseek-session.mjs   Interactive session (+ .cmd and bash shim)
+  bin/                   Shims for the short `deepseek` command
   config.json / prices.json
-claudeseek/SKILL.md      Cuándo y cómo delegar (lo que lee Claude Code)
+claudeseek/SKILL.md      When and how to delegate (what Claude Code reads)
 install.sh / install.ps1
 uninstall.sh / uninstall.ps1
 ```
 
 ---
 
-## Estado
+## Status
 
-Verificado el 2026-09-15 contra DeepSeek real a través del gateway: texto en
-streaming con tildes, razonamiento visible con firma, llamada interna con
-nombre de haiku enrutada a DeepSeek, ciclo de herramientas de dos turnos en
-modo razonamiento, passthrough real a Anthropic, `/v1/models` y
-`count_tokens`. Además, una delegación completa (el agente creó y leyó un
-archivo), el lanzador de sesión en modo `-p`, y la traducción de imágenes en
-sus cuatro casos: texto+imagen, solo imagen, imagen dentro de un `tool_result`
-y modelo sin visión.
+Verified on 2026-09-15 against real DeepSeek through the gateway: streaming
+text with accented characters, visible reasoning with signature, an internal
+call using a haiku name routed to DeepSeek, a two-turn tool cycle in
+reasoning mode, real passthrough to Anthropic, `/v1/models` and
+`count_tokens`. Also, a full delegation (the agent created and read a file),
+the session launcher in `-p` mode, and image translation across its four
+cases: text+image, image only, image inside a `tool_result`, and a
+non-vision model.
 
 ---
 
-## Desinstalar
+## Uninstalling
 
 ```bash
 ./uninstall.sh        # macOS / Linux
 .\uninstall.ps1       # Windows
 ```
 
-Mata el gateway si está corriendo, borra el código y la skill, y **conserva
-`.env`, `usage.jsonl` y `agent-runs.jsonl`** por si querés reinstalar sin perder
-el historial de costos.
+Kills the gateway if it's running, deletes the code and the skill, and
+**keeps `.env`, `usage.jsonl`, and `agent-runs.jsonl`** in case you want to
+reinstall without losing the cost history.
 
 ---
 
-## Licencia
+## License
 
 [Apache-2.0](LICENSE).

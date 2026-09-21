@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// dsk - CLI de diagnóstico y control del gateway DeepSeek <-> Claude Code.
+// dsk - diagnostic and control CLI for the DeepSeek <-> Claude Code gateway.
 //
-// La forma normal de usar DeepSeek ahora es elegirlo como modelo dentro de
-// Claude Code (/model). Este CLI es para instalar, diagnosticar y operar el
-// gateway, no para delegar tareas puntuales.
+// The normal way to use DeepSeek now is to pick it as a model inside Claude
+// Code (/model). This CLI is for installing, diagnosing, and operating the
+// gateway, not for delegating one-off tasks.
 
 import { existsSync, readFileSync, statSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
@@ -48,32 +48,32 @@ async function cmdDoctor() {
   const config = loadJson(CONFIG_PATH, null);
   const lines = [];
   lines.push(`node: ${process.version}`);
-  lines.push(`config.json: ${config ? 'OK' : 'FALTA -> ' + CONFIG_PATH}`);
+  lines.push(`config.json: ${config ? 'OK' : 'MISSING -> ' + CONFIG_PATH}`);
   if (!config) { process.stdout.write(lines.join('\n') + '\n'); return 1; }
 
   const { key, source } = resolveApiKey(ENV_PATH);
   if (!key) {
-    lines.push(`API key: NO ENCONTRADA. Pegala en ${ENV_PATH} como DEEPSEEK_API_KEY=sk-...`);
+    lines.push(`API key: NOT FOUND. Paste it into ${ENV_PATH} as DEEPSEEK_API_KEY=sk-...`);
     process.stdout.write(lines.join('\n') + '\n');
     return 2;
   }
-  lines.push(`API key: ${maskKey(key)} (fuente: ${source})`);
+  lines.push(`API key: ${maskKey(key)} (source: ${source})`);
 
   const health = await isAlive(config.port);
   lines.push(health
-    ? `Gateway: corriendo en 127.0.0.1:${config.port} (pid ${health.pid}, uptime ${health.uptimeSec}s)`
-    : `Gateway: NO responde en 127.0.0.1:${config.port}. Correr: node "${path.join(SCRIPT_DIR, 'cli.mjs')}" gateway start`);
+    ? `Gateway: running on 127.0.0.1:${config.port} (pid ${health.pid}, uptime ${health.uptimeSec}s)`
+    : `Gateway: NOT responding on 127.0.0.1:${config.port}. Run: node "${path.join(SCRIPT_DIR, 'cli.mjs')}" gateway start`);
 
   try {
     const ids = await fetchLiveModels(config.deepseekBaseUrl, key);
-    lines.push(`Conectividad DeepSeek: OK. Modelos vivos: ${ids.join(', ')}`);
+    lines.push(`DeepSeek connectivity: OK. Live models: ${ids.join(', ')}`);
     for (const [name, m] of Object.entries(getModels(config))) {
-      const vision = m.vision === false ? 'sin imágenes' : 'con imágenes';
+      const vision = m.vision === false ? 'no images' : 'with images';
       lines.push(`  ${name} -> ${m.id} (${vision})`);
-      if (!ids.includes(m.id)) lines.push(`  AVISO: "${name}" -> "${m.id}" no aparece en la lista viva de DeepSeek.`);
+      if (!ids.includes(m.id)) lines.push(`  WARNING: "${name}" -> "${m.id}" doesn't appear in DeepSeek's live list.`);
     }
   } catch (e) {
-    lines.push(`Conectividad DeepSeek: FALLÓ (${e.status ? 'HTTP ' + e.status : e.message})`);
+    lines.push(`DeepSeek connectivity: FAILED (${e.status ? 'HTTP ' + e.status : e.message})`);
     process.stdout.write(lines.join('\n') + '\n');
     return 3;
   }
@@ -85,7 +85,7 @@ async function cmdDoctor() {
 async function cmdModels() {
   const config = loadJson(CONFIG_PATH, { deepseekBaseUrl: 'https://api.deepseek.com' });
   const { key } = resolveApiKey(ENV_PATH);
-  if (!key) { process.stderr.write(`Sin API key. Pegala en ${ENV_PATH}\n`); return 2; }
+  if (!key) { process.stderr.write(`No API key. Paste it into ${ENV_PATH}\n`); return 2; }
   try {
     const ids = await fetchLiveModels(config.deepseekBaseUrl, key);
     for (const id of ids) process.stdout.write(id + '\n');
@@ -98,7 +98,7 @@ async function cmdModels() {
 
 function cmdCost(opts) {
   if (!existsSync(USAGE_LOG_PATH)) {
-    process.stdout.write('Sin registros aún.\n');
+    process.stdout.write('No records yet.\n');
     return 0;
   }
   const cutoff = opts.since ? since(opts.since) : null;
@@ -108,9 +108,9 @@ function cmdCost(opts) {
       const r = JSON.parse(l);
       if (cutoff && new Date(r.ts).getTime() < cutoff) continue;
       rows.push(r);
-    } catch { /* línea corrupta */ }
+    } catch { /* corrupt line */ }
   }
-  if (!rows.length) { process.stdout.write('Sin registros en el rango pedido.\n'); return 0; }
+  if (!rows.length) { process.stdout.write('No records in the requested range.\n'); return 0; }
 
   const groups = new Map();
   for (const r of rows) {
@@ -125,18 +125,18 @@ function cmdCost(opts) {
   const out = [];
   for (const [key, g] of groups) {
     totalCost += g.cost;
-    out.push(`${key.padEnd(20)} llamadas=${g.count} (fallas=${g.fail})  in=${g.in}  out=${g.out}  ~$${fmtCost(g.cost)}`);
+    out.push(`${key.padEnd(20)} calls=${g.count} (failures=${g.fail})  in=${g.in}  out=${g.out}  ~$${fmtCost(g.cost)}`);
   }
   out.push('-'.repeat(60));
-  out.push(`TOTAL                llamadas=${rows.length}  ~$${fmtCost(totalCost)}`);
+  out.push(`TOTAL                calls=${rows.length}  ~$${fmtCost(totalCost)}`);
   process.stdout.write(out.join('\n') + '\n');
   return 0;
 }
 
 function cmdKey() {
   const { key, source } = resolveApiKey(ENV_PATH);
-  process.stdout.write(`Archivo .env: ${ENV_PATH}\n`);
-  process.stdout.write(key ? `Key cargada: ${maskKey(key)} (fuente: ${source})\n` : 'Key: NO cargada.\n');
+  process.stdout.write(`.env file: ${ENV_PATH}\n`);
+  process.stdout.write(key ? `Key loaded: ${maskKey(key)} (source: ${source})\n` : 'Key: NOT loaded.\n');
   return 0;
 }
 
@@ -147,14 +147,14 @@ async function cmdGateway(sub) {
     return r.failed ? 1 : 0;
   }
   if (sub === 'stop' || sub === 'restart') {
-    // Hace falta para que el gateway recargue config.json o código nuevo.
+    // Needed so the gateway reloads config.json or new code.
     const health = await isAlive(config.port);
     if (health) {
-      try { process.kill(health.pid); } catch { /* ya no existía */ }
+      try { process.kill(health.pid); } catch { /* already gone */ }
       for (let i = 0; i < 20 && await isAlive(config.port); i++) await new Promise((r) => setTimeout(r, 150));
-      process.stdout.write(`Gateway detenido (pid ${health.pid}).\n`);
+      process.stdout.write(`Gateway stopped (pid ${health.pid}).\n`);
     } else {
-      process.stdout.write('El gateway no estaba corriendo.\n');
+      process.stdout.write('The gateway wasn\'t running.\n');
     }
     if (sub === 'stop') return 0;
     const r = await ensureGatewayRunning({ quiet: false });
@@ -163,29 +163,29 @@ async function cmdGateway(sub) {
   if (sub === 'status') {
     const health = await isAlive(config.port);
     process.stdout.write(health
-      ? `Corriendo: pid ${health.pid}, uptime ${health.uptimeSec}s, puerto ${config.port}\n`
-      : `No responde en el puerto ${config.port}.\n`);
+      ? `Running: pid ${health.pid}, uptime ${health.uptimeSec}s, port ${config.port}\n`
+      : `Not responding on port ${config.port}.\n`);
     return health ? 0 : 1;
   }
   if (sub === 'logs') {
-    if (!existsSync(GATEWAY_LOG_PATH)) { process.stdout.write('Sin log todavía.\n'); return 0; }
+    if (!existsSync(GATEWAY_LOG_PATH)) { process.stdout.write('No log yet.\n'); return 0; }
     const lines = stripBom(readFileSync(GATEWAY_LOG_PATH, 'utf8')).split('\n').filter(Boolean);
     process.stdout.write(lines.slice(-40).join('\n') + '\n');
     return 0;
   }
-  process.stderr.write('Uso: dsk gateway start|status|logs\n');
+  process.stderr.write('Usage: dsk gateway start|status|logs\n');
   return 1;
 }
 
 function usage() {
-  return `dsk - diagnóstico y control del gateway DeepSeek <-> Claude Code
+  return `dsk - diagnostic and control for the DeepSeek <-> Claude Code gateway
 
-Uso:
-  dsk doctor                     Chequeo completo: key, gateway, conectividad
-  dsk models                     Lista modelos vivos de DeepSeek
-  dsk cost [--since 7d]          Resume el consumo (usage.jsonl)
-  dsk key                        Muestra de dónde sale la API key (enmascarada)
-  dsk gateway start|status|logs  Arranca / consulta / ve el log del gateway
+Usage:
+  dsk doctor                     Full check: key, gateway, connectivity
+  dsk models                     List DeepSeek's live models
+  dsk cost [--since 7d]          Summarize usage (usage.jsonl)
+  dsk key                        Show where the API key comes from (masked)
+  dsk gateway start|status|logs  Start / check / view the gateway's log
 `;
 }
 
@@ -207,11 +207,11 @@ async function main() {
   }
 }
 
-// process.exitCode en vez de process.exit(): forzar la salida cierra de
-// golpe los sockets keep-alive que deja abiertos fetch/undici, y en Windows
-// eso puede crashear el proceso con "Assertion failed: UV_HANDLE_CLOSING".
-// Con exitCode, Node cierra solo apenas el event loop queda vacío.
+// process.exitCode instead of process.exit(): forcing an exit abruptly closes
+// the keep-alive sockets left open by fetch/undici, and on Windows that can
+// crash the process with "Assertion failed: UV_HANDLE_CLOSING".
+// With exitCode, Node closes on its own once the event loop is empty.
 main().then((code) => { process.exitCode = code ?? 0; }).catch((e) => {
-  process.stderr.write(`Error inesperado: ${e.stack || e.message}\n`);
+  process.stderr.write(`Unexpected error: ${e.stack || e.message}\n`);
   process.exitCode = 1;
 });

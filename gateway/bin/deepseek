@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# Atajo global: "deepseek" en vez de la ruta completa a deepseek-session.
-# Instalado en ~/.local/bin (ya está en el PATH, junto a claude).
+# Global shortcut: "deepseek" instead of the full path to deepseek-session.
+# Installed in ~/.local/bin (already in PATH, alongside claude).
 exec node "$HOME/.claude/deepseek-gateway/deepseek-session.mjs" "$@"

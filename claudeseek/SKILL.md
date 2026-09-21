@@ -1,140 +1,140 @@
 ---
 name: claudeseek
-description: Usar para delegar una tarea a un Claude Code completo (todas las herramientas, skills, MCP, subagentes y razonamiento opcional) que corre sobre DeepSeek en vez del modelo actual. Típico para tareas grandes de escritura o generación de contenido (secciones de un sitio, copy, FAQs, traducciones, boilerplate, datos de ejemplo) donde no hace falta el criterio del modelo caro. También cuando el usuario diga "delegá a deepseek", "usá deepseek", "mandalo a deepseek", "/deepseek" o pregunte cómo abrir una sesión sobre DeepSeek. Además aplica DENTRO de una sesión que ya corre sobre DeepSeek cuando necesita WebSearch o cualquier otra herramienta de servidor de Anthropic que no existe ahí: esta skill explica cómo escalar ese paso puntual a un Sonnet real.
+description: Use to delegate a task to a full Claude Code (all tools, skills, MCP, subagents, and optional reasoning) running on DeepSeek instead of the current model. Typical for large writing or content-generation tasks (sections of a site, copy, FAQs, translations, boilerplate, sample data) where the expensive model's judgment isn't needed. Also when the user says "delegate to deepseek", "use deepseek", "send it to deepseek" ("delegá a deepseek", "usá deepseek", "mandalo a deepseek"), "/deepseek", or asks how to open a session on DeepSeek. Also applies INSIDE a session already running on DeepSeek when it needs WebSearch or any other Anthropic server-side tool that doesn't exist there: this skill explains how to escalate that one-off step to a real Sonnet.
 ---
 
-# Delegar a DeepSeek desde Claude Code
+# Delegating to DeepSeek from Claude Code
 
-DeepSeek funciona acá como **otro modelo de Claude Code**: la delegación
-levanta un `claude -p` real, con todo lo que tiene cualquier sesión
-(herramientas, skills, hooks, MCP, CLAUDE.md, subagentes), pero cuyas
-llamadas al modelo van a la API directa de DeepSeek a través de un gateway
-local. Ese proceso es independiente de esta sesión: no toca su login ni su
-configuración.
+Here DeepSeek works as **just another Claude Code model**: delegation spins
+up a real `claude -p`, with everything any session has (tools, skills,
+hooks, MCP, CLAUDE.md, subagents), but whose model calls go to DeepSeek's
+direct API through a local gateway. That process is independent from this
+session: it doesn't touch its login or its configuration.
 
-## Regla de oro
+## Golden rule
 
-El agente delegado ya viene instruido para terminar con una respuesta corta
-(archivos tocados + una frase). **No leas completos los archivos que
-escribió** salvo que esa respuesta indique un problema: leerlos anula el
-ahorro de tokens, que es la razón de delegar. Para verificar, alcanza con
-mirar el inicio/fin del archivo o buscar algo puntual.
+The delegated agent is already instructed to finish with a short response
+(files touched + one sentence). **Don't read the files it wrote in full**
+unless that response indicates a problem: reading them defeats the token
+savings, which is the whole reason to delegate. To verify, it's enough to
+look at the start/end of the file or search for something specific.
 
-## Cuándo delegar
+## When to delegate
 
-| Delegar a DeepSeek | Resolver en esta sesión |
+| Delegate to DeepSeek | Handle in this session |
 |---|---|
-| Escribir o adaptar contenido largo (copy, secciones, FAQs, fichas) | Decisiones de arquitectura o diseño |
-| Tareas repetitivas bien especificadas (boilerplate, datos de ejemplo, traducciones) | Cambios que exigen entender a fondo el resto del repo |
-| Lotes de archivos independientes entre sí | Tareas chicas: levantar otro proceso no se paga |
+| Writing or adapting long content (copy, sections, FAQs, spec sheets) | Architecture or design decisions |
+| Well-specified repetitive tasks (boilerplate, sample data, translations) | Changes that require deeply understanding the rest of the repo |
+| Batches of files independent from each other | Small tasks: spinning up another process doesn't pay off |
 
-**Aviso proactivo:** si una tarea que pidió el usuario implica mucho texto de
-salida (del orden de 1500 palabras o más), proponé en una línea delegarla a
-DeepSeek y esperá su OK. No delegues por cuenta propia sin ese OK, salvo que
-el usuario ya lo haya autorizado en esta sesión.
+**Proactive notice:** if a task the user asked for involves a lot of output
+text (on the order of 1500 words or more), propose delegating it to DeepSeek
+in one line and wait for their OK. Don't delegate on your own without that
+OK, unless the user already authorized it earlier in this session.
 
-## Cómo delegar
+## How to delegate
 
-1. Escribí el brief a un archivo (scratchpad de la sesión). Siempre archivo:
-   evita problemas de comillas y acentos entre PowerShell y Bash. El brief
-   tiene que ser autosuficiente: el agente delegado no ve esta conversación.
-2. Ejecutá:
+1. Write the brief to a file (session scratchpad). Always a file: it avoids
+   quoting/accent issues between PowerShell and Bash. The brief has to be
+   self-contained: the delegated agent doesn't see this conversation.
+2. Run:
 
 ```bash
 node "$HOME/.claude/deepseek-gateway/deepseek-agent.mjs" \
-  --task-file "<ruta del brief>" \
-  --dir "<carpeta del proyecto>" \
-  --label "<nombre corto>"
+  --task-file "<brief path>" \
+  --dir "<project folder>" \
+  --label "<short name>"
 ```
 
-**Por defecto queda como sesión visible en segundo plano** (no bloquea esta
-llamada): aparece en el agent view de Claude Code (el usuario entra con ←
-desde su sesión, o vos con `claude attach <id>`), en `claude agents`, y sigue
-corriendo aunque termine este comando. El recibo trae el id y los comandos
-para seguirla (`attach` / `logs` / `stop`). Si el usuario pregunta "¿cómo veo
-lo que está haciendo?" o "¿cómo entro?", esa es la respuesta: tecla ← o
-`claude attach <id>`.
+**By default it stays as a visible background session** (doesn't block this
+call): it shows up in Claude Code's agent view (the user enters with ← from
+their session, or you with `claude attach <id>`), in `claude agents`, and
+keeps running even after this command finishes. The receipt carries the id
+and the commands to follow it (`attach` / `logs` / `stop`). If the user asks
+"how do I see what it's doing?" or "how do I get in?", that's the answer:
+← key or `claude attach <id>`.
 
-Con `--foreground` en cambio bloquea esta llamada y devuelve un resumen corto
-al terminar (no queda una sesión visible después) — útil cuando lo único que
-importa es el resultado final y no hace falta inspeccionarlo.
+With `--foreground` it instead blocks this call and returns a short summary
+when done (no session left visible after) — useful when only the final
+result matters and there's no need to inspect it.
 
-Opciones útiles:
+Useful options:
 
-- `--model deepseek-flash` (default): razona solo si hace falta (si Claude
-  Code lo pide).
-- `--model deepseek-flash-thinking`: razona siempre. Para tareas que exigen
-  pensar (lógica, planificación, código no trivial).
-- `--name <texto>`: nombre de la sesión en el agent view (default: `--label`
-  o el nombre de la carpeta).
-- `--permission-mode <modo>`: default `bypassPermissions` (no pide
-  confirmaciones). Lo único bloqueado por defecto es `git push`.
-- `--timeout-min <n>`: solo aplica con `--foreground` (default 30).
+- `--model deepseek-flash` (default): only reasons if needed (if Claude Code
+  asks for it).
+- `--model deepseek-flash-thinking`: always reasons. For tasks that require
+  thinking (logic, planning, non-trivial code).
+- `--name <text>`: session name in the agent view (default: `--label` or the
+  folder's name).
+- `--permission-mode <mode>`: default `bypassPermissions` (doesn't ask for
+  confirmations). The only thing blocked by default is `git push`.
+- `--timeout-min <n>`: only applies with `--foreground` (default 30).
 
-**Varias tareas en paralelo:** una invocación por tarea (cada una devuelve su
-propio id de inmediato, no hace falta `run_in_background` de Bash). Que
-trabajen sobre archivos distintos.
+**Several tasks in parallel:** one invocation per task (each returns its own
+id right away, no need for Bash's `run_in_background`). Have them work on
+different files.
 
-## Sesión interactiva sobre DeepSeek (para el usuario)
+## Interactive session on DeepSeek (for the user)
 
-Si el usuario quiere trabajar él mismo sobre DeepSeek:
+If the user wants to work on DeepSeek themselves:
 
 ```
 $HOME/.claude/deepseek-gateway/deepseek-session.cmd
 $HOME/.claude/deepseek-gateway/deepseek-session.cmd --model deepseek-flash-thinking
 ```
 
-Es una sesión normal de Claude Code en esa terminal, con todo disponible.
-Dentro, `/model` permite alternar entre la variante con y sin razonamiento.
-No afecta ninguna otra sesión abierta.
+It's a normal Claude Code session in that terminal, with everything
+available. Inside, `/model` lets you toggle between the with- and
+without-reasoning variant. It doesn't affect any other open session.
 
-## Escalar a Sonnet real (para una sesión que YA corre sobre DeepSeek)
+## Escalating to a real Sonnet (for a session already running on DeepSeek)
 
-Si estás corriendo sobre DeepSeek y la tarea necesita algo que acá no existe
-— WebSearch es el caso típico, ver Limitaciones — no lo inventes ni lo des
-por imposible: podés escalar ese paso puntual a un Claude Code real (Sonnet,
-tu login por suscripción) sin salir de esta sesión, vía Bash:
+If you're running on DeepSeek and the task needs something that doesn't
+exist here — WebSearch is the typical case, see Limitations — don't make it
+up or call it impossible: you can escalate that one-off step to a real
+Claude Code (Sonnet, your subscription login) without leaving this session,
+via Bash:
 
 ```bash
 node "$HOME/.claude/deepseek-gateway/escalate-to-sonnet.mjs" \
-  --task "Buscá en la web: <query concreta> y devolveme los datos con fuentes" \
-  --dir "<carpeta actual>"
+  --task "Search the web for: <specific query> and give me the data with sources" \
+  --dir "<current folder>"
 ```
 
-Para tareas más largas, `--task-file <ruta>` en vez de `--task`. Bloquea y
-devuelve la respuesta de texto de Sonnet; no queda una sesión visible
-después. Usalo solo para el paso puntual que lo necesita (una búsqueda, un
-dato que hay que verificar), no para delegarle la tarea entera — eso
-consume cuota/costo real de Anthropic, no la de DeepSeek.
+For longer tasks, `--task-file <path>` instead of `--task`. Blocks and
+returns Sonnet's text response; no session is left visible after. Use it
+only for the one-off step that needs it (a search, a fact that needs
+verifying), not to delegate the whole task — that consumes real
+Anthropic quota/cost, not DeepSeek's.
 
-## Diagnóstico y costo
+## Diagnostics and cost
 
 ```bash
-node "$HOME/.claude/deepseek-gateway/cli.mjs" doctor           # key, gateway, conectividad
-node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway restart  # tras cambiar config.json
-node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway logs     # últimas peticiones
-node "$HOME/.claude/deepseek-gateway/cli.mjs" cost --since 7d  # costo real en DeepSeek
+node "$HOME/.claude/deepseek-gateway/cli.mjs" doctor           # key, gateway, connectivity
+node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway restart  # after changing config.json
+node "$HOME/.claude/deepseek-gateway/cli.mjs" gateway logs     # latest requests
+node "$HOME/.claude/deepseek-gateway/cli.mjs" cost --since 7d  # real DeepSeek cost
 ```
 
-El costo en dólares que reporta Claude Code dentro de una sesión sobre
-DeepSeek **no es real** (usa tarifas de Anthropic). El real es el de `cost`.
+The dollar cost Claude Code reports inside a DeepSeek session **isn't real**
+(it uses Anthropic rates). The real one is `cost`'s.
 
-## Errores comunes
+## Common errors
 
-| Mensaje | Qué hacer |
+| Message | What to do |
 |---|---|
-| `Sin API key de DeepSeek` | Avisar al usuario: pegarla en `$HOME/.claude/deepseek-gateway/.env` |
-| `El gateway DeepSeek no arrancó` | Correr `doctor` y `gateway logs` |
-| `AGENTE-DEEPSEEK CON ERROR` (solo `--foreground`) | Leer el resultado: el agente explica qué falló |
-| `No se pudo iniciar la sesión en segundo plano` | Se imprime el stderr/stdout del proceso; revisarlo antes de reintentar |
+| `No DeepSeek API key` | Tell the user: paste it into `$HOME/.claude/deepseek-gateway/.env` |
+| `The DeepSeek gateway didn't start` | Run `doctor` and `gateway logs` |
+| `DEEPSEEK-AGENT WITH ERROR` (only `--foreground`) | Read the result: the agent explains what failed |
+| `Could not start the background session` | The process's stderr/stdout is printed; check it before retrying |
 
-## Limitaciones
+## Limitations
 
-- Las herramientas "de servidor" de Anthropic (WebSearch) no existen en
-  DeepSeek. WebFetch sí funciona. Para escalar un paso puntual a Sonnet
-  real, ver "Escalar a Sonnet real" más arriba.
-- Las imágenes las analiza `deepseek-flash`, incluso dentro de un
-  `tool_result` (sirve para capturas de pantalla). `deepseek-pro` no las ve:
-  ahí llega un aviso de texto.
-- `deepseek-pro` hoy lo redirige DeepSeek a `deepseek-flash` (desde el
-  14-sep-2026), así que en la práctica son el mismo modelo.
+- Anthropic's "server-side" tools (WebSearch) don't exist on DeepSeek.
+  WebFetch does work. To escalate a one-off step to a real Sonnet, see
+  "Escalating to a real Sonnet" above.
+- Images are analyzed by `deepseek-flash`, even inside a `tool_result`
+  (useful for screenshots). `deepseek-pro` can't see them: a text notice
+  arrives there instead.
+- DeepSeek currently redirects `deepseek-pro` to `deepseek-flash` (since
+  2026-09-14), so in practice they're the same model.

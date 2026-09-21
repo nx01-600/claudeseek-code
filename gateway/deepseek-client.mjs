@@ -1,6 +1,6 @@
-// Cliente HTTP hacia la API directa de DeepSeek (OpenAI-compatible).
-// No sabe nada de Anthropic ni de Claude Code: solo habla el dialecto de
-// DeepSeek. La traducción de protocolo vive en translate.mjs.
+// HTTP client for DeepSeek's direct API (OpenAI-compatible).
+// Knows nothing about Anthropic or Claude Code: it only speaks DeepSeek's
+// dialect. Protocol translation lives in translate.mjs.
 
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,7 @@ function cleanKeyValue(v) {
 }
 
 export function maskKey(key) {
-  if (!key) return '(sin key)';
+  if (!key) return '(no key)';
   if (key.length <= 8) return 'sk-...' + key.slice(-2);
   return key.slice(0, 3) + '...' + key.slice(-4);
 }
@@ -46,23 +46,23 @@ export function loadJson(p, fallback) {
   }
 }
 
-// Resuelve la API key de DeepSeek. Nunca lee ni toca ninguna variable
-// ANTHROPIC_*: esta función es la única frontera con el secreto de DeepSeek.
+// Resolves the DeepSeek API key. Never reads or touches any ANTHROPIC_*
+// variable: this function is the only boundary with the DeepSeek secret.
 export function resolveApiKey(envPath) {
   const fromEnv = process.env.DEEPSEEK_API_KEY;
   if (fromEnv && cleanKeyValue(fromEnv)) {
-    return { key: cleanKeyValue(fromEnv), source: 'variable de entorno DEEPSEEK_API_KEY' };
+    return { key: cleanKeyValue(fromEnv), source: 'DEEPSEEK_API_KEY environment variable' };
   }
   const vars = loadDotEnv(envPath);
   const cleaned = cleanKeyValue(vars.DEEPSEEK_API_KEY);
-  if (cleaned && !cleaned.includes('PEGA_TU_API_KEY') && !cleaned.includes('TU_API_KEY')) {
-    return { key: cleaned, source: `archivo ${envPath}` };
+  if (cleaned && !cleaned.includes('PEGA_TU_API_KEY') && !cleaned.includes('TU_API_KEY') && !cleaned.includes('PASTE_YOUR_API_KEY')) {
+    return { key: cleaned, source: `file ${envPath}` };
   }
   return { key: null, source: null };
 }
 
-// Catálogo de modelos: nombre que ve Claude Code -> { id real en DeepSeek,
-// modo de razonamiento }. Acepta también el formato viejo "modelAliases".
+// Model catalog: name Claude Code sees -> { real DeepSeek id, reasoning
+// mode }. Also accepts the old "modelAliases" format.
 export function getModels(config) {
   if (config.models) return config.models;
   const out = {};
@@ -70,9 +70,9 @@ export function getModels(config) {
   return out;
 }
 
-// Resuelve el modelo pedido. "known" indica si el nombre es de DeepSeek; si no
-// lo es (por ejemplo una llamada interna de Claude Code con nombre de haiku),
-// se devuelve el modelo por defecto para que quien llame decida qué hacer.
+// Resolves the requested model. "known" says whether the name is a DeepSeek
+// one; if it isn't (e.g. an internal Claude Code call using a haiku-style
+// name), the default model is returned so the caller decides what to do.
 export function resolveModel(requested, config) {
   const models = getModels(config);
   if (requested && models[requested]) return { alias: requested, known: true, ...models[requested] };
@@ -81,10 +81,10 @@ export function resolveModel(requested, config) {
   return { alias: def, known: false, ...(models[def] || { id: def, thinking: 'auto' }) };
 }
 
-// Llama a DeepSeek en modo streaming. Devuelve un async generator que emite
-// los objetos JSON ya parseados de cada evento "data: {...}" del SSE de
-// DeepSeek (formato OpenAI-compatible). No acumula ni interpreta contenido:
-// eso es responsabilidad de quien traduce hacia el formato de Anthropic.
+// Calls DeepSeek in streaming mode. Returns an async generator that emits the
+// already-parsed JSON objects from each "data: {...}" event of DeepSeek's SSE
+// (OpenAI-compatible format). Doesn't accumulate or interpret content: that's
+// the responsibility of whoever translates it into Anthropic's format.
 export async function* streamDeepSeekChat({ baseUrl, apiKey, body, signal, stallTimeoutMs = 120000 }) {
   const controller = new AbortController();
   if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
@@ -106,7 +106,7 @@ export async function* streamDeepSeekChat({ baseUrl, apiKey, body, signal, stall
     });
   } catch (e) {
     clearTimeout(stallTimer);
-    const err = new Error(e.name === 'AbortError' ? 'sin actividad de DeepSeek (timeout)' : e.message);
+    const err = new Error(e.name === 'AbortError' ? 'no activity from DeepSeek (timeout)' : e.message);
     err.networkError = true;
     throw err;
   }
@@ -134,18 +134,18 @@ export async function* streamDeepSeekChat({ baseUrl, apiKey, body, signal, stall
       buffer = lines.pop();
       for (const rawLine of lines) {
         const line = rawLine.trim();
-        if (!line.startsWith('data:')) continue; // ignora comentarios/keep-alive
+        if (!line.startsWith('data:')) continue; // ignore comments/keep-alive
         const data = line.slice(5).trim();
         if (data === '[DONE]') continue;
         try {
           yield JSON.parse(data);
         } catch {
-          // chunk corrupto/partido, se ignora
+          // corrupt/split chunk, ignored
         }
       }
     }
   } catch (e) {
-    const err = new Error(e.name === 'AbortError' ? 'sin actividad de DeepSeek (timeout)' : e.message);
+    const err = new Error(e.name === 'AbortError' ? 'no activity from DeepSeek (timeout)' : e.message);
     err.networkError = true;
     throw err;
   } finally {
@@ -153,7 +153,7 @@ export async function* streamDeepSeekChat({ baseUrl, apiKey, body, signal, stall
   }
 }
 
-// Llamada no-streaming (usada solo si Claude Code pide stream:false).
+// Non-streaming call (used only if Claude Code requests stream:false).
 export async function callDeepSeekChatOnce({ baseUrl, apiKey, body, signal }) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -169,7 +169,7 @@ export async function callDeepSeekChatOnce({ baseUrl, apiKey, body, signal }) {
     throw err;
   }
   if (!json || !Array.isArray(json.choices)) {
-    const err = new Error('DeepSeek respondió 200 pero el cuerpo no tiene el formato esperado (sin "choices").');
+    const err = new Error('DeepSeek responded 200 but the body doesn\'t have the expected format (no "choices").');
     err.status = 502;
     throw err;
   }

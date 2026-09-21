@@ -1,64 +1,64 @@
-// Construye el entorno de un proceso de Claude Code que corre sobre DeepSeek.
+// Builds the environment for a Claude Code process running on DeepSeek.
 //
-// Todo lo que se setea acá vive SOLO en ese proceso hijo. La sesión normal de
-// Claude Code nunca ve estas variables y sigue con su login por suscripción.
+// Everything set here lives ONLY in that child process. The normal Claude
+// Code session never sees these variables and keeps its subscription login.
 
 import { getModels } from './deepseek-client.mjs';
 
-// Bloquear WebSearch (server.mjs / los launchers) no alcanza: el modelo
-// tiene que saber que existe un camino para investigar igual, si no lo pide
-// por su cuenta o inventa datos. Se lo decimos directo en el system prompt
-// en vez de confiar en que descubra la skill claudeseek solo (DeepSeek
-// sigue esas convenciones peor que Claude).
-export const WEBSEARCH_NOTICE = 'WebSearch esta deshabilitada en esta sesion: corre sobre DeepSeek, que no puede ejecutarla (es una herramienta de servidor de Anthropic). Si necesitas buscar algo en internet o verificar un dato actual, ejecuta con Bash: node "$HOME/.claude/deepseek-gateway/escalate-to-sonnet.mjs" --task "<que buscar>" -- lanza un Claude real (Sonnet) con WebSearch y devuelve la respuesta con fuentes. Usalo cada vez que haga falta informacion de internet; no inventes resultados ni digas que no podes buscar.';
+// Blocking WebSearch (server.mjs / the launchers) isn't enough: the model
+// still needs to know there's a way to research anyway, or it'll ask for it
+// on its own or make up data. We tell it directly in the system prompt
+// instead of relying on it discovering the claudeseek skill by itself
+// (DeepSeek follows those conventions worse than Claude does).
+export const WEBSEARCH_NOTICE = 'WebSearch is disabled in this session: it runs on DeepSeek, which cannot execute it (it\'s an Anthropic server-side tool). If you need to search the internet or verify a current fact, run with Bash: node "$HOME/.claude/deepseek-gateway/escalate-to-sonnet.mjs" --task "<what to search for>" -- this launches a real Claude (Sonnet) with WebSearch and returns the answer with sources. Use it whenever you need internet information; do not make up results or say you cannot search.';
 
-// Variables que Claude Code le pone a los procesos que lanza. Si el hijo las
-// hereda, puede creer que está anidado dentro de la sesión padre.
+// Variables Claude Code sets on the processes it launches. If the child
+// inherits them, it may think it's nested inside the parent session.
 const PARENT_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT'];
 
-// Solo las claves que hay que agregar/pisar para que un proceso de Claude
-// Code corra sobre DeepSeek. Sirve tanto para spawn({env}) como para el
-// bloque "env" de un archivo --settings.
+// Only the keys that need to be added/overridden for a Claude Code process to
+// run on DeepSeek. Used both for spawn({env}) and for the "env" block of a
+// --settings file.
 export function scopedOverrides(config, { model } = {}) {
   const main = model || config.defaultModel;
   const roles = config.roleModels || {};
   const models = getModels(config);
 
-  // Opción extra en el selector /model: la variante con o sin razonamiento
-  // del modelo principal, para poder alternar sin salir de la sesión.
+  // Extra option in the /model selector: the with/without-reasoning variant
+  // of the main model, so you can switch without leaving the session.
   const sibling = main.endsWith('-thinking') ? main.slice(0, -'-thinking'.length) : `${main}-thinking`;
 
   const env = {
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${config.port}`,
-    // El gateway reconoce este token y manda TODO a DeepSeek. No es un secreto:
-    // la key real de DeepSeek la pone el gateway, nunca pasa por Claude Code.
+    // The gateway recognizes this token and sends EVERYTHING to DeepSeek. It's
+    // not a secret: the gateway holds the real DeepSeek key, which never passes through Claude Code.
     ANTHROPIC_AUTH_TOKEN: config.scopedToken,
     ANTHROPIC_MODEL: main,
-    // Claude Code usa nombres de rol (opus/sonnet/haiku) para subagentes y
-    // llamadas internas; se mapean a modelos de DeepSeek.
+    // Claude Code uses role names (opus/sonnet/haiku) for subagents and
+    // internal calls; these map them to DeepSeek models.
     ANTHROPIC_DEFAULT_OPUS_MODEL: roles.opus || main,
     ANTHROPIC_DEFAULT_SONNET_MODEL: roles.sonnet || main,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: roles.haiku || main,
     ANTHROPIC_SMALL_FAST_MODEL: roles.haiku || main,
-    // Telemetría y chequeos que irían a Anthropic con un token que no es suyo.
+    // Telemetry and checks that would otherwise go to Anthropic with a token that isn't theirs.
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-    // Claude Code no reconoce "deepseek-flash" como modelo propio, así que
-    // por defecto le asigna una ventana de contexto mucho más chica de la
-    // real y compacta antes de tiempo. Esto le dice la ventana real.
+    // Claude Code doesn't recognize "deepseek-flash" as one of its own models,
+    // so by default it assigns a context window much smaller than the real
+    // one and compacts early. This tells it the real window size.
     CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(config.contextWindowTokens || 1_000_000),
   };
 
   if (models[sibling]) {
     env.ANTHROPIC_CUSTOM_MODEL_OPTION = sibling;
-    env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME = sibling.endsWith('-thinking') ? 'DeepSeek con razonamiento' : 'DeepSeek sin razonamiento';
-    env.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION = `${models[sibling].id} (API directa de DeepSeek)`;
+    env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME = sibling.endsWith('-thinking') ? 'DeepSeek with reasoning' : 'DeepSeek without reasoning';
+    env.ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION = `${models[sibling].id} (direct DeepSeek API)`;
   }
   return env;
 }
 
-// Para spawn({ env }): el entorno completo del proceso hijo (hereda el de
-// esta sesión + los overrides de arriba). Uso: deepseek-session (interactiva
-// en primer plano) y el modo --foreground de deepseek-agent.
+// For spawn({ env }): the child process's full environment (inherits this
+// session's + the overrides above). Used by: deepseek-session (foreground
+// interactive) and deepseek-agent's --foreground mode.
 export function buildScopedEnv(config, { model, baseEnv = process.env } = {}) {
   const env = { ...baseEnv };
   delete env.ANTHROPIC_API_KEY;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Desinstala el gateway claudeseek y la skill. NUNCA borra .env, usage.jsonl
-# ni agent-runs.jsonl -- si querés borrarlos, hacelo a mano.
-# Si el gateway está corriendo, lo mata primero (si no, quedaría un proceso
-# huérfano sin nadie que lo administre).
+# Uninstalls the claudeseek gateway and the skill. NEVER deletes .env,
+# usage.jsonl, or agent-runs.jsonl -- if you want to delete them, do it by hand.
+# If the gateway is running, it kills it first (otherwise it would leave an
+# orphaned process with no one managing it).
 
 set -uo pipefail
 
@@ -17,7 +17,7 @@ CODE_FILES=(
   dsk.cmd dsk config.json prices.json
 )
 
-# Puerto del gateway (config.json manda, 4319 por defecto).
+# Gateway port (config.json takes precedence, 4319 by default).
 PORT=4319
 if [ -f "$GATEWAY_DST/config.json" ]; then
   P="$(node -e "try{console.log(require('$GATEWAY_DST/config.json').port||4319)}catch{console.log(4319)}" 2>/dev/null || echo 4319)"
@@ -29,7 +29,7 @@ fetch('http://127.0.0.1:$PORT/health').then(r=>r.json()).then(j=>{if(j&&j.pid)co
 " 2>/dev/null || true)"
 
 if [ -n "${PID:-}" ]; then
-  echo "Deteniendo gateway (pid $PID)..."
+  echo "Stopping gateway (pid $PID)..."
   kill "$PID" 2>/dev/null || true
   for _ in $(seq 1 20); do
     kill -0 "$PID" 2>/dev/null || break
@@ -41,15 +41,15 @@ for f in "${CODE_FILES[@]}"; do
   p="$GATEWAY_DST/$f"
   if [ -f "$p" ]; then
     rm -f "$p"
-    echo "Borrado: $p"
+    echo "Deleted: $p"
   fi
 done
-echo "Se conservan (a propósito): .env, usage.jsonl, agent-runs.jsonl, gateway.log en $GATEWAY_DST"
+echo "Kept (on purpose): .env, usage.jsonl, agent-runs.jsonl, gateway.log in $GATEWAY_DST"
 
 for d in "$SKILL_DST" "$OLD_SKILL_DST"; do
   if [ -d "$d" ]; then
     rm -rf "$d"
-    echo "Borrado: $d"
+    echo "Deleted: $d"
   fi
 done
 
@@ -58,6 +58,6 @@ for f in deepseek deepseek.cmd; do
   p="$LOCAL_BIN/$f"
   if [ -f "$p" ]; then
     rm -f "$p"
-    echo "Borrado: $p"
+    echo "Deleted: $p"
   fi
 done

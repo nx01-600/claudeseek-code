@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// Escapa el entorno DeepSeek para lanzar un Claude Code real (Sonnet, login
-// por suscripción) DESDE DENTRO de una sesión que corre sobre DeepSeek.
+// Escapes the DeepSeek environment to launch a real Claude Code (Sonnet,
+// subscription login) FROM INSIDE a session running on DeepSeek.
 //
-// Uso típico: la sesión DeepSeek necesita algo que ella no puede hacer
-// (WebSearch u otra herramienta "de servidor" de Anthropic) y delega ese
-// paso puntual a un Sonnet real, vía Bash, sin salir de lo que está haciendo.
+// Typical use: the DeepSeek session needs something it can't do itself
+// (WebSearch or another Anthropic "server-side" tool) and delegates that
+// one-off step to a real Sonnet, via Bash, without leaving what it's doing.
 //
-// No toca la sesión que lo invoca: crea un proceso `claude` nuevo con el
-// entorno limpio de los overrides que le puso scoped-env.mjs, y espera su
-// resultado. Ese Sonnet real usa cuota/costo real de Anthropic, no la del
-// gateway DeepSeek.
+// Doesn't touch the session that invokes it: it creates a new `claude`
+// process with the environment cleaned of the overrides scoped-env.mjs
+// applied, and waits for its result. That real Sonnet uses real Anthropic
+// quota/cost, not the DeepSeek gateway's.
 
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -30,20 +30,19 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return `escalate-to-sonnet - lanza un Claude Code real (Sonnet, login por suscripción) desde una sesión DeepSeek
+  return `escalate-to-sonnet - launches a real Claude Code (Sonnet, subscription login) from a DeepSeek session
 
-Uso:
-  node escalate-to-sonnet.mjs --task-file <brief.txt> [--dir <carpeta>] [--model sonnet]
-  node escalate-to-sonnet.mjs --task "<texto corto>"
+Usage:
+  node escalate-to-sonnet.mjs --task-file <brief.txt> [--dir <folder>] [--model sonnet]
+  node escalate-to-sonnet.mjs --task "<short text>"
 
-Para cuando la sesión DeepSeek necesita algo que no puede hacer ella misma
-(WebSearch u otra herramienta de servidor de Anthropic que no exista en
-DeepSeek). Bloquea y devuelve la respuesta de texto de Sonnet; no queda una
-sesión visible después.
+For when the DeepSeek session needs something it can't do itself (WebSearch
+or another Anthropic server-side tool that doesn't exist on DeepSeek). Blocks
+and returns Sonnet's text response; no session is left visible afterward.
 
-Ojo: esto SÍ consume cuota/costo real de Anthropic, a diferencia del resto
-de la sesión DeepSeek que lo invoca. Usar solo para el paso puntual que lo
-necesita, no para delegar la tarea entera.
+Careful: this DOES consume real Anthropic quota/cost, unlike the rest of the
+DeepSeek session that invokes it. Use it only for the one-off step that needs
+it, not to delegate the entire task.
 `;
 }
 
@@ -56,16 +55,16 @@ async function main() {
   const taskText = opts['task-file'] ? readFileSync(opts['task-file'], 'utf8') : opts.task;
 
   const config = loadJson(CONFIG_PATH, null);
-  // Las mismas claves que scoped-env.mjs le agrega/pisa a una sesión DeepSeek.
-  // Se leen de ahí (no se copian a mano) para no desincronizarse si cambian.
+  // The same keys scoped-env.mjs adds/overrides on a DeepSeek session. Read
+  // from there (not copied by hand) so they don't drift out of sync if they change.
   const overrideKeys = config ? Object.keys(scopedOverrides(config, {})) : [];
 
   const env = { ...process.env };
   for (const k of overrideKeys) delete env[k];
 
-  // Por defecto solo herramientas de investigación (esto es para escalar un
-  // paso puntual de research, no para delegarle la tarea entera a Sonnet).
-  // "none" abre el resto si hace falta, ej. para verificar algo con Bash.
+  // Research tools only by default (this is for escalating a one-off research
+  // step, not for delegating the whole task to Sonnet).
+  // "none" opens up the rest if needed, e.g. to verify something with Bash.
   const allowed = opts['allowed-tools'] === 'none' ? []
     : opts['allowed-tools'] ? opts['allowed-tools'].split(',').map((s) => s.trim()).filter(Boolean)
     : ['WebSearch', 'WebFetch'];
@@ -87,7 +86,7 @@ async function main() {
   });
 
   if (code !== 0) {
-    process.stderr.write(err || `claude terminó con código ${code}\n`);
+    process.stderr.write(err || `claude exited with code ${code}\n`);
     return code ?? 1;
   }
 
@@ -101,6 +100,6 @@ async function main() {
 }
 
 main().then((code) => { process.exitCode = code; }).catch((e) => {
-  process.stderr.write(`Error inesperado: ${e.stack || e.message}\n`);
+  process.stderr.write(`Unexpected error: ${e.stack || e.message}\n`);
   process.exitCode = 1;
 });

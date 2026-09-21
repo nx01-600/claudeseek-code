@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Delega una tarea a un Claude Code COMPLETO (todas las herramientas, skills,
-// hooks, MCP, CLAUDE.md y subagentes) que corre sobre DeepSeek.
+// Delegates a task to a FULL Claude Code (all tools, skills, hooks, MCP,
+// CLAUDE.md, and subagents) running on DeepSeek.
 //
-// Por defecto usa `claude --bg`: la sesión delegada queda VISIBLE como una
-// sesión más -- aparece en el agent view (← desde una sesión interactiva) y
-// en `claude agents`, se puede seguir con `claude attach/logs`, y sigue
-// corriendo aunque este comando ya haya terminado. Es el mismo mecanismo que
-// usa Claude Code para cualquier sesión en segundo plano; acá solo se le
-// pasa un entorno acotado (--settings) para que hable con DeepSeek en vez de
-// con Anthropic. Esa sesión que invoca este script nunca ve esa variable.
+// By default uses `claude --bg`: the delegated session stays VISIBLE as just
+// another session -- it shows up in the agent view (← from an interactive
+// session) and in `claude agents`, can be followed with `claude attach/logs`,
+// and keeps running even after this command has finished. It's the same
+// mechanism Claude Code uses for any background session; here it's just
+// given a scoped environment (--settings) so it talks to DeepSeek instead of
+// Anthropic. The session that invokes this script never sees that variable.
 //
-// Uso:
-//   node deepseek-agent.mjs --task-file brief.txt --dir "C:/proyecto" [opciones]
-//   node deepseek-agent.mjs --task "texto corto" --dir "C:/proyecto" --foreground
+// Usage:
+//   node deepseek-agent.mjs --task-file brief.txt --dir "C:/project" [options]
+//   node deepseek-agent.mjs --task "short text" --dir "C:/project" --foreground
 
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
@@ -28,26 +28,25 @@ const ENV_PATH = path.join(SCRIPT_DIR, '.env');
 const AGENT_LOG_PATH = path.join(SCRIPT_DIR, 'agent-runs.jsonl');
 const BG_SETTINGS_DIR = path.join(SCRIPT_DIR, '.bg-settings');
 
-// Se agrega al final de toda tarea: la respuesta final es lo único que entra
-// al contexto de quien delegó (o lo primero que se ve en `claude logs`), así
-// que tiene que ser corta.
+// Appended to the end of every task: the final response is the only thing
+// that reaches the delegator's context (or the first thing seen in `claude
+// logs`), so it has to be short.
 const OUTPUT_CONTRACT = `
 
 ---
-Cuando termines toda la tarea, tu ÚLTIMA respuesta de texto debe ser SOLO:
-- La lista de archivos que creaste o modificaste (rutas relativas).
-- Una frase de una línea confirmando qué se hizo, o qué quedó pendiente y por qué.
-No repitas el contenido de los archivos ni pegues fragmentos largos.`;
+When you finish the whole task, your LAST text response must be ONLY:
+- The list of files you created or modified (relative paths).
+- A one-line sentence confirming what was done, or what's left pending and why.
+Do not repeat file contents or paste long snippets.`;
 
-// Un brief largo como argumento de línea de comandos arriesga el límite de
-// Windows; por encima de esto se escribe a archivo y se le pide al agente
-// que lo lea con su propia herramienta.
+// A long brief as a command-line argument risks Windows' limit; above this
+// it's written to a file and the agent is asked to read it with its own tool.
 const INLINE_TASK_MAX_CHARS = 3500;
 
-// WebSearch es tool de servidor de Anthropic (la ejecuta Anthropic dentro de
-// la misma llamada a la API): no existe forma de que DeepSeek la resuelva.
-// Si se deja disponible, el modelo la intenta igual y devuelve resultados
-// inventados o directamente falla. Se bloquea para que solo la use Claude real.
+// WebSearch is an Anthropic server-side tool (Anthropic executes it within
+// the same API call): there's no way for DeepSeek to resolve it. If left
+// available, the model tries it anyway and returns made-up results or just
+// fails outright. It's blocked so only a real Claude uses it.
 const DEFAULT_DISALLOWED = ['Bash(git push:*)', 'Bash(git push *)', 'WebSearch'];
 
 function parseArgs(argv) {
@@ -60,27 +59,27 @@ function parseArgs(argv) {
 
 function usage(config) {
   const models = Object.keys(getModels(config)).join(', ');
-  return `deepseek-agent - delega una tarea a un Claude Code completo corriendo sobre DeepSeek
+  return `deepseek-agent - delegates a task to a full Claude Code running on DeepSeek
 
-Uso:
-  node deepseek-agent.mjs --task-file <brief.txt> --dir <carpeta> [opciones]
+Usage:
+  node deepseek-agent.mjs --task-file <brief.txt> --dir <folder> [options]
 
-Por defecto queda como sesión en segundo plano VISIBLE (agent view, "claude
-agents", "claude attach/logs/stop"). Con --foreground corre bloqueando esta
-llamada y devuelve un resumen corto al terminar (sin quedar visible después).
+By default it stays as a VISIBLE background session (agent view, "claude
+agents", "claude attach/logs/stop"). With --foreground it runs blocking this
+call and returns a short summary when done (without staying visible after).
 
-Opciones:
-  --task-file <ruta>          Brief de la tarea (preferido)
-  --task <texto>              Alternativa para tareas cortas
-  --dir <ruta>                Carpeta de trabajo del agente (obligatorio)
-  --model <nombre>            ${models} (default: ${config.defaultModel})
-  --name <texto>              Nombre de la sesión (default: --label o la carpeta)
-  --foreground                Bloquea y devuelve un resumen; no queda visible después
-  --permission-mode <modo>    Default bypassPermissions (acceptEdits, auto, manual...)
-  --disallowed-tools <lista>  Separadas por coma; "none" para no bloquear nada.
+Options:
+  --task-file <path>          Task brief (preferred)
+  --task <text>               Alternative for short tasks
+  --dir <path>                Agent's working folder (required)
+  --model <name>              ${models} (default: ${config.defaultModel})
+  --name <text>               Session name (default: --label or the folder)
+  --foreground                Blocks and returns a summary; doesn't stay visible after
+  --permission-mode <mode>    Default bypassPermissions (acceptEdits, auto, manual...)
+  --disallowed-tools <list>   Comma-separated; "none" to block nothing.
                               Default: ${DEFAULT_DISALLOWED.join(', ')}
-  --timeout-min <n>           Solo con --foreground (default 30)
-  --label <texto>             Etiqueta para agent-runs.jsonl
+  --timeout-min <n>           Only with --foreground (default 30)
+  --label <text>              Label for agent-runs.jsonl
 `;
 }
 
@@ -93,36 +92,36 @@ function buildTaskText(opts, dir) {
   mkdirSync(BG_SETTINGS_DIR, { recursive: true });
   const briefPath = path.join(BG_SETTINGS_DIR, `brief-${Date.now()}.md`);
   writeFileSync(briefPath, full, 'utf8');
-  return `Tu tarea completa está en el archivo "${briefPath}". Leelo primero con tu ` +
-    `herramienta de lectura de archivos y después seguí exactamente lo que diga, ` +
-    `incluidas sus instrucciones de cómo responder al terminar.`;
+  return `Your full task is in the file "${briefPath}". Read it first with your ` +
+    `file-reading tool and then follow exactly what it says, ` +
+    `including its instructions on how to respond when you're done.`;
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const config = loadJson(CONFIG_PATH, null);
-  if (!config) { process.stderr.write(`No se pudo leer ${CONFIG_PATH}\n`); return 1; }
+  if (!config) { process.stderr.write(`Could not read ${CONFIG_PATH}\n`); return 1; }
 
   if (!opts.dir || (!opts['task-file'] && !opts.task)) {
     process.stderr.write(usage(config));
     return 1;
   }
   if (!existsSync(opts.dir)) {
-    process.stderr.write(`La carpeta de trabajo no existe: ${opts.dir}\n`);
+    process.stderr.write(`Working folder doesn't exist: ${opts.dir}\n`);
     return 1;
   }
 
   const model = opts.model || config.defaultModel;
   if (!resolveModel(model, config).known) {
-    process.stderr.write(`Modelo desconocido: ${model}. Disponibles: ${Object.keys(getModels(config)).join(', ')}\n`);
+    process.stderr.write(`Unknown model: ${model}. Available: ${Object.keys(getModels(config)).join(', ')}\n`);
     return 1;
   }
 
   const { key } = resolveApiKey(ENV_PATH);
-  if (!key) { process.stderr.write(`Sin API key de DeepSeek. Pegala en: ${ENV_PATH}\n`); return 2; }
+  if (!key) { process.stderr.write(`No DeepSeek API key. Paste it into: ${ENV_PATH}\n`); return 2; }
 
   const gw = await ensureGatewayRunning({ quiet: true, waitMs: 3000 });
-  if (gw.failed) { process.stderr.write('El gateway DeepSeek no arrancó. Revisar gateway.log.\n'); return 2; }
+  if (gw.failed) { process.stderr.write('The DeepSeek gateway didn\'t start. Check gateway.log.\n'); return 2; }
 
   const taskText = buildTaskText(opts, opts.dir);
   const label = opts.label || path.basename(path.resolve(opts.dir));
@@ -136,7 +135,7 @@ async function main() {
   return runBackground({ config, model, opts, taskText, name, label, permissionMode, disallowed });
 }
 
-// --- modo por defecto: sesión visible en segundo plano ---
+// --- default mode: visible background session ---
 async function runBackground({ config, model, opts, taskText, name, label, permissionMode, disallowed }) {
   mkdirSync(BG_SETTINGS_DIR, { recursive: true });
   const settingsPath = path.join(BG_SETTINGS_DIR, `${label}-${Date.now()}.json`);
@@ -145,9 +144,9 @@ async function runBackground({ config, model, opts, taskText, name, label, permi
   const args = ['--bg', '--settings', settingsPath, '--model', model, '--name', name, '--permission-mode', permissionMode];
   args.push('--append-system-prompt', WEBSEARCH_NOTICE);
   if (disallowed.length) args.push('--disallowedTools', ...disallowed);
-  // "--" corta la lista variádica de --disallowedTools: sin esto, el texto
-  // de la tarea se tragaba como si fuera un nombre de herramienta más y la
-  // sesión quedaba backgroundeada sin ningún prompt inicial (idle).
+  // "--" cuts off the variadic --disallowedTools list: without this, the
+  // task text got swallowed as if it were just another tool name and the
+  // session ended up backgrounded with no initial prompt (idle).
   args.push('--', taskText);
 
   const startedAt = Date.now();
@@ -170,7 +169,7 @@ async function runBackground({ config, model, opts, taskText, name, label, permi
   }) + '\n', 'utf8');
 
   if (!m) {
-    process.stderr.write(`No se pudo iniciar la sesión en segundo plano (exit ${exitCode}).\n`);
+    process.stderr.write(`Could not start the background session (exit ${exitCode}).\n`);
     if (stderr.trim()) process.stderr.write(stderr.trim().slice(-1500) + '\n');
     if (clean.trim()) process.stderr.write(clean.trim().slice(-1500) + '\n');
     return exitCode || 1;
@@ -178,17 +177,17 @@ async function runBackground({ config, model, opts, taskText, name, label, permi
 
   const id = m[1];
   process.stdout.write(
-    `DEEPSEEK EN SEGUNDO PLANO | id ${id} | nombre "${m[2].trim()}" | modelo ${model} | ${opts.dir}\n` +
-    `Visible en el agent view de Claude Code (tecla para volver desde una sesión) y en "claude agents".\n` +
-    `  claude attach ${id}   -> entrar a esa sesión en esta terminal\n` +
-    `  claude logs ${id}     -> ver su salida sin entrar\n` +
-    `  claude stop ${id}     -> detenerla\n` +
-    `No hay que esperar nada acá: la sesión sigue corriendo sola.\n`
+    `DEEPSEEK IN BACKGROUND | id ${id} | name "${m[2].trim()}" | model ${model} | ${opts.dir}\n` +
+    `Visible in Claude Code's agent view (key to return from a session) and in "claude agents".\n` +
+    `  claude attach ${id}   -> enter that session in this terminal\n` +
+    `  claude logs ${id}     -> view its output without entering\n` +
+    `  claude stop ${id}     -> stop it\n` +
+    `Nothing to wait for here: the session keeps running on its own.\n`
   );
   return 0;
 }
 
-// --- --foreground: bloquea y devuelve un resumen corto, sin quedar visible después ---
+// --- --foreground: blocks and returns a short summary, without staying visible after ---
 async function runForeground({ config, model, opts, taskText, label, permissionMode, disallowed }) {
   const args = ['-p', '--model', model, '--permission-mode', permissionMode, '--output-format', 'json'];
   args.push('--append-system-prompt', WEBSEARCH_NOTICE);
@@ -230,23 +229,23 @@ async function runForeground({ config, model, opts, taskText, label, permissionM
   }) + '\n', 'utf8');
 
   if (!parsed) {
-    process.stderr.write(`El agente delegado no devolvió un resultado válido (exit ${exitCode}${timedOut ? ', cortado por timeout' : ''}).\n`);
+    process.stderr.write(`The delegated agent didn't return a valid result (exit ${exitCode}${timedOut ? ', cut off by timeout' : ''}).\n`);
     process.stderr.write((stderr.trim() || trimmed).slice(-1500) + '\n');
     return exitCode || 1;
   }
 
-  const status = parsed.is_error ? 'CON ERROR' : 'OK';
+  const status = parsed.is_error ? 'WITH ERROR' : 'OK';
   process.stdout.write(
-    `AGENTE-DEEPSEEK ${status} | modelo ${model} | ${opts.dir} | ${parsed.num_turns ?? '?'} turnos | ${seconds.toFixed(1)}s\n` +
-    `Costo real: node "${path.join(SCRIPT_DIR, 'cli.mjs')}" cost --since 1h (el costo que calcula Claude Code usa tarifas de Anthropic)\n` +
-    `--- resultado ---\n${String(parsed.result ?? '(sin texto final)').trim()}\n`
+    `DEEPSEEK-AGENT ${status} | model ${model} | ${opts.dir} | ${parsed.num_turns ?? '?'} turns | ${seconds.toFixed(1)}s\n` +
+    `Real cost: node "${path.join(SCRIPT_DIR, 'cli.mjs')}" cost --since 1h (the cost Claude Code calculates uses Anthropic rates)\n` +
+    `--- result ---\n${String(parsed.result ?? '(no final text)').trim()}\n`
   );
   return parsed.is_error ? 1 : exitCode;
 }
 
-// exitCode en vez de exit(): evita crashear en Windows por sockets keep-alive
-// que deja fetch abiertos.
+// exitCode instead of exit(): avoids crashing on Windows because of keep-alive
+// sockets fetch leaves open.
 main().then((code) => { process.exitCode = code ?? 0; }).catch((e) => {
-  process.stderr.write(`Error inesperado: ${e.stack || e.message}\n`);
+  process.stderr.write(`Unexpected error: ${e.stack || e.message}\n`);
   process.exitCode = 1;
 });

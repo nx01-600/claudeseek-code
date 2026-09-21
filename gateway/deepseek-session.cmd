@@ -1,4 +1,4 @@
 @echo off
-rem Sesion interactiva de Claude Code completa sobre DeepSeek.
-rem Acotada a esta ventana: las demas sesiones de Claude no se enteran.
+rem Full interactive Claude Code session running on DeepSeek.
+rem Scoped to this window: other Claude sessions are unaffected.
 node "%~dp0deepseek-session.mjs" %*

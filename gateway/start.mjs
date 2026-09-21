@@ -1,7 +1,7 @@
-// Arranca el gateway si no está corriendo. Idempotente: si ya hay uno
-// escuchando en el puerto configurado, no hace nada. Pensado para ser
-// invocado tanto a mano (`dsk gateway start`) como desde el hook de
-// SessionStart de Claude Code, donde tiene que ser rápido y nunca colgarse.
+// Starts the gateway if it isn't already running. Idempotent: if one is
+// already listening on the configured port, it does nothing. Meant to be
+// invoked both by hand (`dsk gateway start`) and from Claude Code's
+// SessionStart hook, where it has to be fast and never hang.
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -30,7 +30,7 @@ export async function ensureGatewayRunning({ quiet = false, waitMs = 2000 } = {}
   const port = config.port;
 
   if (await isAlive(port)) {
-    if (!quiet) process.stdout.write(`Gateway ya está corriendo en el puerto ${port}.\n`);
+    if (!quiet) process.stdout.write(`Gateway is already running on port ${port}.\n`);
     return { started: false, alreadyRunning: true, port };
   }
 
@@ -44,20 +44,20 @@ export async function ensureGatewayRunning({ quiet = false, waitMs = 2000 } = {}
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
     if (await isAlive(port, 300)) {
-      if (!quiet) process.stdout.write(`Gateway arrancado en el puerto ${port} (pid ${child.pid}).\n`);
+      if (!quiet) process.stdout.write(`Gateway started on port ${port} (pid ${child.pid}).\n`);
       return { started: true, alreadyRunning: false, port, pid: child.pid };
     }
     await new Promise((r) => setTimeout(r, 150));
   }
 
-  if (!quiet) process.stderr.write(`Gateway no respondió en ${waitMs}ms tras arrancarlo. Revisar gateway.log.\n`);
+  if (!quiet) process.stderr.write(`Gateway didn't respond within ${waitMs}ms after starting it. Check gateway.log.\n`);
   return { started: false, alreadyRunning: false, port, failed: true };
 }
 
 // Invocable directo: `node start.mjs`
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   const result = await ensureGatewayRunning();
-  // exitCode en vez de exit(): evita crashear en Windows por los sockets
-  // keep-alive que deja fetch/undici (ver mismo fix en cli.mjs).
+  // exitCode instead of exit(): avoids crashing on Windows because of the
+  // keep-alive sockets left behind by fetch/undici (see same fix in cli.mjs).
   process.exitCode = result.failed ? 1 : 0;
 }

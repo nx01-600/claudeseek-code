@@ -1,17 +1,18 @@
-// Gateway local: habla el protocolo de Anthropic (/v1/messages) hacia Claude
-// Code y lo traduce a la API directa de DeepSeek.
+// Local gateway: speaks Anthropic's protocol (/v1/messages) to Claude Code
+// and translates it to DeepSeek's direct API.
 //
-// Dos modos por petición:
-// - "scoped": la petición trae el token de config.scopedToken, o sea viene de
-//   un proceso de Claude Code lanzado para correr sobre DeepSeek (delegación o
-//   sesión interactiva). TODO va a DeepSeek, incluidas las llamadas internas
-//   que Claude Code hace con nombres de modelo de Anthropic. Nunca se reenvía
-//   nada a Anthropic con ese token, porque no es una credencial de Anthropic.
-// - normal: si el modelo es DeepSeek se traduce; si no, passthrough intacto
-//   hacia api.anthropic.com.
+// Two modes per request:
+// - "scoped": the request carries the config.scopedToken token, meaning it
+//   comes from a Claude Code process launched to run on DeepSeek (delegation
+//   or an interactive session). EVERYTHING goes to DeepSeek, including the
+//   internal calls Claude Code makes using Anthropic model names. Nothing is
+//   ever forwarded to Anthropic with that token, because it isn't an
+//   Anthropic credential.
+// - normal: if the model is a DeepSeek one it gets translated; otherwise,
+//   passthrough untouched to api.anthropic.com.
 //
-// Escucha SOLO en 127.0.0.1. La key de DeepSeek nunca viaja a Anthropic y las
-// credenciales de Anthropic nunca viajan a DeepSeek.
+// Listens ONLY on 127.0.0.1. The DeepSeek key never travels to Anthropic and
+// Anthropic credentials never travel to DeepSeek.
 
 import http from 'node:http';
 import path from 'node:path';
@@ -40,11 +41,11 @@ const FORWARD_REQUEST_HEADERS = [
 const DROP_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding', 'connection', 'content-encoding']);
 
 function log(line) {
-  try { appendFileSync(GATEWAY_LOG_PATH, `[${new Date().toISOString()}] ${line}\n`, 'utf8'); } catch { /* no crítico */ }
+  try { appendFileSync(GATEWAY_LOG_PATH, `[${new Date().toISOString()}] ${line}\n`, 'utf8'); } catch { /* not critical */ }
 }
 
 function logUsage(entry) {
-  try { appendFileSync(USAGE_LOG_PATH, JSON.stringify(entry) + '\n', 'utf8'); } catch { /* no crítico */ }
+  try { appendFileSync(USAGE_LOG_PATH, JSON.stringify(entry) + '\n', 'utf8'); } catch { /* not critical */ }
 }
 
 function readBody(req) {
@@ -82,7 +83,7 @@ async function passthrough(config, req, res, rawBody) {
     });
   } catch (e) {
     log(`ERROR passthrough ${req.method} ${req.url}: ${e.message}`);
-    sendJson(res, 502, anthropicErrorEnvelope('api_error', `No se pudo contactar a Anthropic: ${e.message}`));
+    sendJson(res, 502, anthropicErrorEnvelope('api_error', `Could not reach Anthropic: ${e.message}`));
     return;
   }
   const outHeaders = {};
@@ -115,21 +116,21 @@ async function handleMessages(config, prices, req, res, body) {
   const { key } = resolveApiKey(ENV_PATH);
 
   if (!key) {
-    log(`ERROR sin API key de DeepSeek (modelo pedido=${requested})`);
+    log(`ERROR no DeepSeek API key (requested model=${requested})`);
     sendJson(res, 401, anthropicErrorEnvelope('authentication_error',
-      `No hay API key de DeepSeek configurada. Pegala en ${ENV_PATH} como DEEPSEEK_API_KEY=sk-...`));
+      `No DeepSeek API key configured. Paste it into ${ENV_PATH} as DEEPSEEK_API_KEY=sk-...`));
     return;
   }
 
   const thinking = shouldThink(body, model.thinking);
-  // "vision" sale de config.json por modelo: si el modelo elegido no analiza
-  // imágenes, el gateway las reemplaza por un aviso de texto antes de mandar.
+  // "vision" comes from config.json per model: if the chosen model can't
+  // analyze images, the gateway replaces them with a text notice before sending.
   const openaiBody = anthropicToOpenAIRequest(body, { modelId: model.id, thinking, vision: model.vision !== false });
   const promptCharsEstimate = JSON.stringify(openaiBody.messages).length;
   const startedAt = Date.now();
 
-  // Si Claude Code corta la petición (Ctrl+C, timeout), se corta también la
-  // llamada a DeepSeek para no seguir pagando tokens que nadie va a leer.
+  // If Claude Code cuts off the request (Ctrl+C, timeout), the call to
+  // DeepSeek is also cut off so we don't keep paying for tokens no one will read.
   const controller = new AbortController();
   let finished = false;
   res.on('close', () => { if (!finished) controller.abort(); });
@@ -151,10 +152,10 @@ async function handleMessages(config, prices, req, res, body) {
       recordOk(usage, false);
     } catch (e) {
       if (controller.signal.aborted) {
-        log(`Cliente cerró la petición (no-stream, modelo=${model.id})`);
+        log(`Client closed the request (no-stream, model=${model.id})`);
       } else {
         const status = e.status || 502;
-        log(`ERROR DeepSeek no-stream modelo=${model.id}: ${e.message}`);
+        log(`ERROR DeepSeek no-stream model=${model.id}: ${e.message}`);
         sendJson(res, status, anthropicErrorEnvelope(mapHttpStatusToAnthropicErrorType(status), e.message));
         record({ stream: false, ok: false, error: e.message });
       }
@@ -164,18 +165,18 @@ async function handleMessages(config, prices, req, res, body) {
     return;
   }
 
-  // Se espera el primer evento de DeepSeek ANTES de mandar el 200: así un
-  // 401/429/5xx inicial llega a Claude Code como status HTTP real y su lógica
-  // de reintentos funciona igual que con Anthropic.
+  // We wait for DeepSeek's first event BEFORE sending the 200: this way an
+  // initial 401/429/5xx reaches Claude Code as a real HTTP status and its
+  // retry logic works the same as with Anthropic.
   const stream = streamDeepSeekChat(deepseekArgs);
   let first;
   try {
     first = await stream.next();
   } catch (e) {
     finished = true;
-    if (controller.signal.aborted) { log(`Cliente cerró la petición antes de empezar (modelo=${model.id})`); return; }
+    if (controller.signal.aborted) { log(`Client closed the request before it started (model=${model.id})`); return; }
     const status = e.status || 502;
-    log(`ERROR DeepSeek stream modelo=${model.id}: ${e.message}`);
+    log(`ERROR DeepSeek stream model=${model.id}: ${e.message}`);
     sendJson(res, status, anthropicErrorEnvelope(mapHttpStatusToAnthropicErrorType(status), e.message));
     record({ stream: true, ok: false, error: e.message });
     return;
@@ -193,9 +194,9 @@ async function handleMessages(config, prices, req, res, body) {
     recordOk(usage, true);
   } catch (e) {
     if (controller.signal.aborted) {
-      log(`Cliente cerró la petición a mitad del stream (modelo=${model.id})`);
+      log(`Client closed the request mid-stream (model=${model.id})`);
     } else {
-      log(`ERROR DeepSeek a mitad del stream modelo=${model.id}: ${e.message}`);
+      log(`ERROR DeepSeek mid-stream model=${model.id}: ${e.message}`);
       const errType = mapHttpStatusToAnthropicErrorType(e.status || 500);
       res.write(`event: error\ndata: ${JSON.stringify(anthropicErrorEnvelope(errType, e.message))}\n\n`);
       record({ stream: true, ok: false, error: e.message });
@@ -209,7 +210,7 @@ async function handleMessages(config, prices, req, res, body) {
 function createServer() {
   const config = loadJson(CONFIG_PATH, null);
   if (!config) {
-    process.stderr.write(`No se pudo leer ${CONFIG_PATH}\n`);
+    process.stderr.write(`Could not read ${CONFIG_PATH}\n`);
     process.exitCode = 1;
     return;
   }
@@ -265,32 +266,32 @@ function createServer() {
             return;
           }
         }
-        sendJson(res, 404, anthropicErrorEnvelope('not_found_error', `El gateway DeepSeek no implementa ${req.method} ${pathname}`));
+        sendJson(res, 404, anthropicErrorEnvelope('not_found_error', `The DeepSeek gateway doesn't implement ${req.method} ${pathname}`));
         return;
       }
 
       await passthrough(config, req, res, rawBody);
     } catch (e) {
-      log(`ERROR no manejado: ${e.stack || e.message}`);
-      if (!res.headersSent) sendJson(res, 500, anthropicErrorEnvelope('api_error', 'Error interno del gateway.'));
+      log(`ERROR unhandled: ${e.stack || e.message}`);
+      if (!res.headersSent) sendJson(res, 500, anthropicErrorEnvelope('api_error', 'Internal gateway error.'));
       else res.end();
     }
   });
 
   server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
-      process.stderr.write(`El puerto ${config.port} ya está en uso (¿el gateway ya estaba corriendo?).\n`);
+      process.stderr.write(`Port ${config.port} is already in use (is the gateway already running?).\n`);
       process.exitCode = 0;
       return;
     }
-    log(`ERROR de servidor: ${e.message}`);
+    log(`ERROR server: ${e.message}`);
     process.exitCode = 1;
   });
 
   server.listen(config.port, '127.0.0.1', () => {
-    log(`Gateway escuchando en http://127.0.0.1:${config.port} (pid ${process.pid})`);
+    log(`Gateway listening on http://127.0.0.1:${config.port} (pid ${process.pid})`);
   });
 }
 
-// Se invoca siempre como proceso propio (`node server.mjs`).
+// Always invoked as its own process (`node server.mjs`).
 createServer();

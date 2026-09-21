@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Instala el gateway claudeseek (Claude Code sobre DeepSeek) y la skill que le
-# enseña a Claude Code cuándo y cómo delegar.
+# Installs the claudeseek gateway (Claude Code running on DeepSeek) and the
+# skill that teaches Claude Code when and how to delegate.
 #
-# NO toca settings.json ni ninguna variable ANTHROPIC_* global: el gateway solo
-# se usa cuando algo lo invoca explícitamente (delegación headless o sesión
-# interactiva dedicada). Tu sesión normal de Claude Code queda intacta.
+# Does NOT touch settings.json or any global ANTHROPIC_* variable: the gateway
+# is only used when something explicitly invokes it (headless delegation or a
+# dedicated interactive session). Your normal Claude Code session stays intact.
 #
-# Seguro de correr varias veces: nunca pisa .env ni los logs si ya existen.
+# Safe to run multiple times: never overwrites .env or the logs if they already exist.
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ CODE_FILES=(
   escalate-to-sonnet.mjs dsk.cmd dsk config.json prices.json
 )
 
-echo "Instalando gateway en $GATEWAY_DST ..."
+echo "Installing gateway to $GATEWAY_DST ..."
 mkdir -p "$GATEWAY_DST"
 for f in "${CODE_FILES[@]}"; do
   cp -f "$GATEWAY_SRC/$f" "$GATEWAY_DST/$f"
@@ -31,53 +31,53 @@ done
 
 ENV_PATH="$GATEWAY_DST/.env"
 if [ ! -f "$ENV_PATH" ]; then
-  echo "Creando $ENV_PATH con placeholder (no existía)..."
+  echo "Creating $ENV_PATH with a placeholder (it didn't exist)..."
   cat > "$ENV_PATH" <<'EOF'
-# Pegá acá tu API key de DeepSeek (https://platform.deepseek.com/api_keys).
-# Una sola línea, sin comillas. Este archivo nunca se sube a git ni se pisa
-# al reinstalar.
-DEEPSEEK_API_KEY=PEGA_TU_API_KEY_AQUI
+# Paste your DeepSeek API key here (https://platform.deepseek.com/api_keys).
+# A single line, no quotes. This file is never pushed to git and never
+# overwritten on reinstall.
+DEEPSEEK_API_KEY=PASTE_YOUR_API_KEY_HERE
 EOF
 else
-  echo "$ENV_PATH ya existe, no se toca."
+  echo "$ENV_PATH already exists, leaving it alone."
 fi
 
-echo "Instalando skill claudeseek en $SKILL_DST ..."
+echo "Installing the claudeseek skill to $SKILL_DST ..."
 rm -rf "$SKILL_DST"
 mkdir -p "$(dirname "$SKILL_DST")"
 cp -r "$SKILL_SRC" "$SKILL_DST"
 
-# Migración: hasta la v0.2 la skill se llamaba "mascota-deepseek". Si quedó
-# instalada, se saca para que Claude Code no vea dos skills iguales.
+# Migration: up through v0.2 the skill was named "mascota-deepseek". If it's
+# still installed, remove it so Claude Code doesn't see two identical skills.
 OLD_SKILL_DST="$CLAUDE_HOME/skills/mascota-deepseek"
 if [ -d "$OLD_SKILL_DST" ]; then
   rm -rf "$OLD_SKILL_DST"
-  echo "Skill vieja 'mascota-deepseek' eliminada (ahora se llama 'claudeseek')."
+  echo "Old 'mascota-deepseek' skill removed (now called 'claudeseek')."
 fi
 
 LOCAL_BIN="$HOME/.local/bin"
 if [ -d "$LOCAL_BIN" ]; then
-  echo "Instalando comando corto 'deepseek' en $LOCAL_BIN ..."
+  echo "Installing the short 'deepseek' command to $LOCAL_BIN ..."
   cp -f "$GATEWAY_SRC/bin/deepseek" "$LOCAL_BIN/deepseek"
   cp -f "$GATEWAY_SRC/bin/deepseek.cmd" "$LOCAL_BIN/deepseek.cmd"
   chmod +x "$LOCAL_BIN/deepseek"
 else
-  echo "AVISO: no existe $LOCAL_BIN, no se instaló el comando corto 'deepseek'."
-  echo "       Usá $GATEWAY_DST/deepseek-session directo."
+  echo "WARNING: $LOCAL_BIN doesn't exist, the short 'deepseek' command wasn't installed."
+  echo "       Use $GATEWAY_DST/deepseek-session directly."
 fi
 
 echo
 if ! command -v node >/dev/null 2>&1; then
-  echo "AVISO: no se encontró 'node' en el PATH. Hace falta Node.js 18+."
+  echo "WARNING: could not find 'node' in PATH. Node.js 18+ is required."
 fi
 if ! command -v claude >/dev/null 2>&1; then
-  echo "AVISO: no se encontró 'claude' en el PATH. La delegación headless lo necesita."
+  echo "WARNING: could not find 'claude' in PATH. Headless delegation needs it."
 fi
 
-echo "Listo. Verificación:"
-echo "  1) Pegá tu API key en: $ENV_PATH"
-echo "  2) Corré: node \"$GATEWAY_DST/cli.mjs\" doctor"
-echo "  3) Sesión sobre DeepSeek: deepseek [--model deepseek-flash-thinking] [-c|-r]"
+echo "Done. Verification:"
+echo "  1) Paste your API key into: $ENV_PATH"
+echo "  2) Run: node \"$GATEWAY_DST/cli.mjs\" doctor"
+echo "  3) Session on DeepSeek: deepseek [--model deepseek-flash-thinking] [-c|-r]"
 echo
-echo "Nada se activó todavía: el gateway arranca solo cuando algo lo usa"
-echo "(delegación o sesión interactiva). Tu Claude Code normal sigue igual."
+echo "Nothing was activated yet: the gateway only starts when something uses it"
+echo "(delegation or an interactive session). Your normal Claude Code stays the same."

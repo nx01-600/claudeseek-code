@@ -1,27 +1,26 @@
-// Traducción de protocolo: Anthropic Messages API (lo que habla Claude Code)
-// <-> API de DeepSeek, compatible con el formato chat/completions de OpenAI.
+// Protocol translation: Anthropic Messages API (what Claude Code speaks)
+// <-> DeepSeek's API, compatible with OpenAI's chat/completions format.
 //
-// Cubre: texto (streaming y no streaming), herramientas (tool_use /
-// tool_result), imágenes, system prompt, razonamiento de DeepSeek expuesto
-// como bloques "thinking" de Anthropic, stop_reason y usage (incluido cache
-// hit).
+// Covers: text (streaming and non-streaming), tools (tool_use / tool_result),
+// images, system prompt, DeepSeek reasoning exposed as Anthropic "thinking"
+// blocks, stop_reason, and usage (including cache hits).
 //
-// Imágenes: se traducen solo si el modelo elegido las entiende (campo
-// "vision" en config.json). deepseek-flash sí las analiza, y las acepta tanto
-// en un mensaje del usuario como dentro de un tool_result — esto último es lo
-// que permite que una captura de pantalla llegue de verdad al modelo. Con un
-// modelo sin visión cada imagen se reemplaza por un aviso de texto.
+// Images: only translated if the chosen model understands them ("vision"
+// field in config.json). deepseek-flash does analyze them, and accepts them
+// both in a user message and inside a tool_result — the latter is what lets
+// a screenshot actually reach the model. With a non-vision model, every
+// image is replaced with a text notice.
 //
-// No cubre (documentado en el README):
-// - Herramientas "de servidor" de Anthropic (web_search, code_execution):
-//   las ejecuta Anthropic, no el cliente, así que DeepSeek no puede usarlas.
-// - cache_control: DeepSeek cachea solo del lado del servidor.
+// Not covered (documented in the README):
+// - Anthropic "server-side" tools (web_search, code_execution): Anthropic
+//   executes them, not the client, so DeepSeek can't use them.
+// - cache_control: DeepSeek only caches server-side.
 
-const IMAGE_PLACEHOLDER = '[imagen omitida: el modelo DeepSeek elegido no analiza imágenes. Usá deepseek-flash, que sí las ve.]';
+const IMAGE_PLACEHOLDER = '[image omitted: the chosen DeepSeek model doesn\'t analyze images. Use deepseek-flash, which does see them.]';
 
-// Anthropic exige una firma en cada bloque "thinking". Solo Anthropic la
-// verifica, y en modo DeepSeek ninguna petición llega a Anthropic, así que
-// basta con un valor fijo reconocible.
+// Anthropic requires a signature on every "thinking" block. Only Anthropic
+// verifies it, and in DeepSeek mode no request ever reaches Anthropic, so a
+// fixed recognizable value is enough.
 const GATEWAY_SIGNATURE = 'deepseek-gateway';
 
 function flattenToText(content) {
@@ -39,9 +38,9 @@ function flattenToText(content) {
   return parts.join('\n');
 }
 
-// Bloque "image" de Anthropic -> parte "image_url" de OpenAI, que es el
-// formato que DeepSeek acepta igual en un mensaje user que en uno tool.
-// Devuelve null si la fuente no es traducible.
+// Anthropic's "image" block -> OpenAI's "image_url" part, the format
+// DeepSeek accepts the same in a user message as in a tool one.
+// Returns null if the source isn't translatable.
 function imageBlockToPart(block) {
   const src = block.source || {};
   if (src.type === 'base64' && src.data) {
@@ -53,10 +52,9 @@ function imageBlockToPart(block) {
   return null;
 }
 
-// Bloques de contenido de Anthropic -> "content" de OpenAI. Sin imágenes
-// devuelve un string (formato más compatible); con imágenes, un array de
-// partes texto/imagen en el orden original, para no alterar a qué se refiere
-// cada imagen.
+// Anthropic content blocks -> OpenAI "content". Without images it returns a
+// string (more compatible format); with images, an array of text/image parts
+// in the original order, so what each image refers to isn't altered.
 function blocksToOpenAIContent(blocks, { vision }) {
   const parts = [];
   let hasImage = false;
@@ -73,43 +71,43 @@ function blocksToOpenAIContent(blocks, { vision }) {
   return parts;
 }
 
-// Contenido de un tool_result. Puede traer texto, imágenes (capturas de
-// pantalla) o ambos. El formato de OpenAI no tiene "is_error", así que el
-// error se sigue marcando con un prefijo de texto.
+// Content of a tool_result. May carry text, images (screenshots), or both.
+// OpenAI's format has no "is_error", so the error is still marked with a
+// text prefix.
 function toolResultContent(block, { vision }) {
   const raw = block.content;
   const blocks = Array.isArray(raw) ? raw : (raw ? [{ type: 'text', text: String(raw) }] : []);
   let content = blocksToOpenAIContent(blocks, { vision });
-  if (!content || (Array.isArray(content) && !content.length)) content = '(sin contenido)';
+  if (!content || (Array.isArray(content) && !content.length)) content = '(no content)';
   if (!block.is_error) return content;
   return Array.isArray(content)
     ? [{ type: 'text', text: 'ERROR:' }, ...content]
     : `ERROR: ${content}`;
 }
 
-// Modo de razonamiento del modelo elegido:
-//   "on"   -> siempre razona
-//   "off"  -> nunca razona
-//   "auto" -> razona solo si Claude Code lo pide en la petición
+// Reasoning mode of the chosen model:
+//   "on"   -> always reasons
+//   "off"  -> never reasons
+//   "auto" -> only reasons if Claude Code asks for it in the request
 export function shouldThink(body, thinkingMode) {
   if (thinkingMode === 'on') return true;
   if (thinkingMode === 'off') return false;
   return !!body.thinking && body.thinking.type !== 'disabled';
 }
 
-// Algunos proveedores OpenAI-compatibles rechazan "$schema" dentro de los
-// parámetros de una función.
+// Some OpenAI-compatible providers reject "$schema" inside a function's parameters.
 function cleanSchema(schema) {
   if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
   const { $schema, ...rest } = schema;
   return rest;
 }
 
-// Anthropic request -> OpenAI request (para mandar a DeepSeek).
-// "vision" lo decide config.json por modelo; por defecto true (el modelo por
-// defecto, deepseek-flash, sí analiza imágenes). Un modelo sin visión falla
-// fuerte contra DeepSeek si le llega una imagen, así que ante la duda conviene
-// que la imagen viaje y el error se vea, en vez de descartarla en silencio.
+// Anthropic request -> OpenAI request (to send to DeepSeek).
+// "vision" is decided by config.json per model; defaults to true (the
+// default model, deepseek-flash, does analyze images). A non-vision model
+// fails hard against DeepSeek if it gets an image, so when in doubt it's
+// better to let the image through and see the error, rather than silently
+// dropping it.
 export function anthropicToOpenAIRequest(body, { modelId, thinking, vision = true }) {
   const messages = [];
 
@@ -125,8 +123,8 @@ export function anthropicToOpenAIRequest(body, { modelId, thinking, vision = tru
     }
     if (!Array.isArray(msg.content)) continue;
 
-    const textParts = [];    // assistant: texto a devolver
-    const userBlocks = [];   // user: texto e imágenes, en orden
+    const textParts = [];    // assistant: text to return
+    const userBlocks = [];   // user: text and images, in order
     const thinkingParts = [];
     const toolResults = [];
     const toolCalls = [];
@@ -138,8 +136,8 @@ export function anthropicToOpenAIRequest(body, { modelId, thinking, vision = tru
           else userBlocks.push(block);
           break;
         case 'image':
-          // En un mensaje del assistant no existen; en el del usuario van
-          // intercaladas con el texto.
+          // Don't exist in an assistant message; in the user's they're
+          // interleaved with the text.
           if (msg.role !== 'assistant') userBlocks.push(block);
           break;
         case 'thinking': if (block.thinking) thinkingParts.push(block.thinking); break;
@@ -153,7 +151,7 @@ export function anthropicToOpenAIRequest(body, { modelId, thinking, vision = tru
         case 'tool_use':
           toolCalls.push({ id: block.id, type: 'function', function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
           break;
-        default: break; // redacted_thinking y otros: no aplican a DeepSeek
+        default: break; // redacted_thinking and others: don't apply to DeepSeek
       }
     }
 
@@ -161,13 +159,13 @@ export function anthropicToOpenAIRequest(body, { modelId, thinking, vision = tru
       if (!textParts.length && !toolCalls.length) continue;
       const out = { role: 'assistant', content: textParts.join('\n') || (toolCalls.length ? null : '') };
       if (toolCalls.length) out.tool_calls = toolCalls;
-      // DeepSeek necesita recibir de vuelta su propio razonamiento durante un
-      // ciclo de herramientas en modo thinking.
+      // DeepSeek needs to receive its own reasoning back during a tool cycle
+      // in thinking mode.
       if (thinkingParts.length) out.reasoning_content = thinkingParts.join('\n');
       messages.push(out);
     } else {
-      // Los mensajes "tool" deben ir inmediatamente después del assistant que
-      // pidió las herramientas; el texto y las imágenes del usuario van detrás.
+      // "tool" messages must come immediately after the assistant that
+      // requested the tools; the user's text and images follow.
       messages.push(...toolResults);
       const content = blocksToOpenAIContent(userBlocks, { vision });
       if (content && (!Array.isArray(content) || content.length)) messages.push({ role: 'user', content });
@@ -215,16 +213,16 @@ function randomId(prefix) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
 }
 
-// Si el modelo cortó por max_tokens a mitad de los argumentos, el JSON queda
-// inválido. Se manda "{}" para que Claude Code reciba un error de herramienta
-// normal en vez de romperse al parsear.
+// If the model cut off at max_tokens mid-arguments, the JSON is left
+// invalid. "{}" is sent so Claude Code gets a normal tool error instead of
+// breaking while parsing.
 function safeArgs(args) {
   if (!args) return '{}';
   try { JSON.parse(args); return args; } catch { return '{}'; }
 }
 
-// usage de DeepSeek -> usage de Anthropic. En Anthropic input_tokens NO
-// incluye lo leído de cache; eso va en cache_read_input_tokens.
+// DeepSeek usage -> Anthropic usage. In Anthropic, input_tokens does NOT
+// include what was read from cache; that goes in cache_read_input_tokens.
 export function mapUsage(usage, { fallbackInput = 1, fallbackOutput = 1 } = {}) {
   const promptTotal = usage?.prompt_tokens ?? fallbackInput;
   const cached = usage?.prompt_cache_hit_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? 0;
@@ -241,7 +239,7 @@ export function mapUsage(usage, { fallbackInput = 1, fallbackOutput = 1 } = {}) 
   };
 }
 
-// Respuesta completa de DeepSeek (no streaming) -> respuesta de Anthropic.
+// Full DeepSeek response (non-streaming) -> Anthropic response.
 export function openAIResponseToAnthropic(openaiJson, { originalModel, promptCharsEstimate = 0 }) {
   const choice = (openaiJson.choices || [])[0] || {};
   const msg = choice.message || {};
@@ -277,10 +275,10 @@ export function openAIResponseToAnthropic(openaiJson, { originalModel, promptCha
   };
 }
 
-// Traductor con estado para streaming. El texto y el razonamiento se
-// retransmiten en vivo; las herramientas se acumulan y se emiten completas al
-// final, porque OpenAI puede intercalar los argumentos de varias llamadas en
-// paralelo y Anthropic exige bloques secuenciales (start, deltas, stop).
+// Stateful translator for streaming. Text and reasoning are relayed live;
+// tools are accumulated and emitted complete at the end, because OpenAI can
+// interleave the arguments of several parallel calls and Anthropic requires
+// sequential blocks (start, deltas, stop).
 export class AnthropicStreamTranslator {
   constructor({ originalModel, promptCharsEstimate }) {
     this.originalModel = originalModel;
@@ -289,7 +287,7 @@ export class AnthropicStreamTranslator {
     this.started = false;
     this.nextIndex = 0;
     this.current = null; // { kind: 'text' | 'thinking', index }
-    this.tools = new Map(); // índice OpenAI -> { id, name, args }
+    this.tools = new Map(); // OpenAI index -> { id, name, args }
     this.finishReason = null;
     this.usage = null;
     this.textChars = 0;
@@ -374,8 +372,8 @@ export class AnthropicStreamTranslator {
       fallbackInput: Math.ceil(this.promptCharsEstimate / 4) || 1,
       fallbackOutput: Math.max(1, Math.ceil(this.textChars / 4)),
     });
-    // Si DeepSeek pidió herramientas, el stop_reason tiene que ser tool_use
-    // aunque el finish_reason venga distinto.
+    // If DeepSeek requested tools, stop_reason has to be tool_use even if
+    // finish_reason comes back different.
     const stopReason = ordered.length && this.finishReason !== 'length' ? 'tool_use' : mapFinishReason(this.finishReason);
     out += this._ev({ type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage: usage.anthropic });
     out += this._ev({ type: 'message_stop' });
